@@ -50,7 +50,6 @@ namespace KinematicChess
             }
             else _sideColor = SideColor.Black;
             _currentTurn = SideColor.White;
-            DistanceGrabInteractor.GrabbedAction += ObjectGrabbed;
         }
 
         private void ObjectGrabbed(Transform grabber, Transform grabbed)

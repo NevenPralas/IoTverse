@@ -263,7 +263,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &388028474497452506
 Transform:
   m_ObjectHideFlags: 0
@@ -613,8 +613,8 @@ MonoBehaviour:
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_text: "U ovom na\u010Dinu kontrole potrebno je tipkom za hvatanje odabrati figuru
-    zelene boje, te potom tipkom za hvatanje odabrati zeleno polje na plo\u010Di"
+  m_text: "U ovom na\u010Dinu kontrole potrebno je tipkom za hvatanje odabrati \u017Eeljenu
+    figuru, te potom tipkom za hvatanje odabrati \u017Eeljeno polje"
   m_isRightToLeft: 0
   m_fontAsset: {fileID: 11400000, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
   m_sharedMaterial: {fileID: 2180264, guid: 8f586378b4e144a9851e7b34d9b748ee, type: 2}
@@ -762,7 +762,7 @@ MonoBehaviour:
   _pieceColor: 0
   _renderer: {fileID: 4245255335808146886}
   _grabbable: {fileID: 7918373768059216425}
-  _row: 5
+  _row: 7
   _column: 3
   _isSnappingPiece: 0
   _middle: {fileID: 0}
@@ -916,8 +916,8 @@ MonoBehaviour:
   _pieceColor: 0
   _renderer: {fileID: 5802272643752085139}
   _grabbable: {fileID: 7530832975334244055}
-  _row: 5
-  _column: 5
+  _row: 7
+  _column: 7
   _isSnappingPiece: 0
   _middle: {fileID: 0}
   _king: {fileID: 8405955492681178923}
@@ -2065,7 +2065,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &6002797286900340609
 Transform:
   m_ObjectHideFlags: 0
@@ -2278,7 +2278,7 @@ MonoBehaviour:
   _pieceColor: 0
   _renderer: {fileID: 1385595347719775541}
   _grabbable: {fileID: 6444717341526575040}
-  _row: 4
+  _row: 6
   _column: 7
   _isSnappingPiece: 0
   _middle: {fileID: 0}
@@ -2922,8 +2922,8 @@ MonoBehaviour:
   _pieceColor: 0
   _renderer: {fileID: 4895353180345057105}
   _grabbable: {fileID: 8459155050488180819}
-  _row: 5
-  _column: 7
+  _row: 7
+  _column: 5
   _isSnappingPiece: 0
   _middle: {fileID: 0}
 --- !u!23 &4895353180345057105
@@ -3201,7 +3201,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &1019769284688028555
 Transform:
   m_ObjectHideFlags: 0
@@ -3733,7 +3733,7 @@ MonoBehaviour:
   _pieceColor: 0
   _renderer: {fileID: 8610016581127154203}
   _grabbable: {fileID: 5185836382094434869}
-  _row: 3
+  _row: 7
   _column: 0
   _isSnappingPiece: 0
   _middle: {fileID: 0}
@@ -4154,7 +4154,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &6013600840992484894
 Transform:
   m_ObjectHideFlags: 0
@@ -4367,8 +4367,8 @@ MonoBehaviour:
   _pieceColor: 0
   _renderer: {fileID: 1122153751808184645}
   _grabbable: {fileID: 6987624049631764529}
-  _row: 3
-  _column: 6
+  _row: 7
+  _column: 2
   _isSnappingPiece: 0
   _middle: {fileID: 0}
 --- !u!23 &1122153751808184645
@@ -4556,7 +4556,7 @@ MonoBehaviour:
   _pieceColor: 0
   _renderer: {fileID: 2947127061842570065}
   _grabbable: {fileID: 2122351726998533949}
-  _row: 5
+  _row: 6
   _column: 6
   _isSnappingPiece: 0
   _middle: {fileID: 0}
@@ -6763,7 +6763,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &3816617166702030400
 Transform:
   m_ObjectHideFlags: 0
@@ -7996,8 +7996,8 @@ MonoBehaviour:
   _pieceColor: 1
   _renderer: {fileID: 3910753454991041288}
   _grabbable: {fileID: 2173304159424386908}
-  _row: 2
-  _column: 0
+  _row: 0
+  _column: 1
   _isSnappingPiece: 0
   _middle: {fileID: 0}
 --- !u!23 &3910753454991041288
@@ -8446,7 +8446,7 @@ MonoBehaviour:
   _pieceColor: 1
   _renderer: {fileID: 9143169530450175962}
   _grabbable: {fileID: 9009845755645454219}
-  _row: 3
+  _row: 1
   _column: 3
   _isSnappingPiece: 0
   _middle: {fileID: 0}
@@ -9274,8 +9274,8 @@ MonoBehaviour:
   _pieceColor: 1
   _renderer: {fileID: 4470417703176415428}
   _grabbable: {fileID: 1549066551812832031}
-  _row: 4
-  _column: 1
+  _row: 0
+  _column: 0
   _isSnappingPiece: 0
   _middle: {fileID: 0}
   _king: {fileID: 732235724799204446}
@@ -9429,7 +9429,7 @@ MonoBehaviour:
   _pieceColor: 1
   _renderer: {fileID: 1987974996986657173}
   _grabbable: {fileID: 8695132306976557335}
-  _row: 3
+  _row: 1
   _column: 5
   _isSnappingPiece: 0
   _middle: {fileID: 0}
@@ -10087,8 +10087,8 @@ MonoBehaviour:
   _pieceColor: 1
   _renderer: {fileID: 1383612583731749405}
   _grabbable: {fileID: 799049926276708325}
-  _row: 1
-  _column: 3
+  _row: 0
+  _column: 2
   _isSnappingPiece: 0
   _middle: {fileID: 0}
 --- !u!23 &1383612583731749405
@@ -10577,8 +10577,8 @@ MonoBehaviour:
   _pieceColor: 1
   _renderer: {fileID: 2324289797483984287}
   _grabbable: {fileID: 1272415617573343577}
-  _row: 2
-  _column: 3
+  _row: 0
+  _column: 5
   _isSnappingPiece: 0
   _middle: {fileID: 0}
 --- !u!23 &2324289797483984287
@@ -10731,7 +10731,7 @@ MonoBehaviour:
   _pieceColor: 1
   _renderer: {fileID: 262758085120985707}
   _grabbable: {fileID: 1185619565679805421}
-  _row: 2
+  _row: 0
   _column: 7
   _isSnappingPiece: 0
   _middle: {fileID: 0}
@@ -10827,7 +10827,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &4206961179810989344
 Transform:
   m_ObjectHideFlags: 0
@@ -12298,7 +12298,7 @@ MonoBehaviour:
   m_GameObject: {fileID: 7767896753720125439}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: cd577cd04a8584142a587c5d017defe9, type: 3}
+  m_Script: {fileID: 11500000, guid: 95fafc368e8f04642894997930a04452, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
   _checkSound: {fileID: 3596867797016865256}
@@ -12312,13 +12312,13 @@ MonoBehaviour:
   - {fileID: 2071609677280870781}
   - {fileID: 1552244469360345763}
   - {fileID: 7476421238045144879}
+  - {fileID: 4035002426301403}
   - {fileID: 5708154910898594520}
+  - {fileID: 9077072238163462774}
   - {fileID: 1377275292465561198}
+  - {fileID: 1363183797621577026}
   - {fileID: 6303786804721192405}
   - {fileID: 8519071544578784899}
-  - {fileID: 4035002426301403}
-  - {fileID: 9077072238163462774}
-  - {fileID: 1363183797621577026}
   - {fileID: 1116102644155933895}
   _whiteInteractors:
   - {fileID: 4910272961171851283}
@@ -12329,14 +12329,14 @@ MonoBehaviour:
   - {fileID: 9145843243264206790}
   - {fileID: 4939917649775326468}
   - {fileID: 8011952095760469100}
+  - {fileID: 6379817993476016075}
   - {fileID: 5404650359711338788}
+  - {fileID: 1491376857974329049}
+  - {fileID: 7632252395640955494}
   - {fileID: 4571385228419913280}
   - {fileID: 6054626505638326145}
   - {fileID: 5986603562918892074}
   - {fileID: 793528154534863119}
-  - {fileID: 6379817993476016075}
-  - {fileID: 1491376857974329049}
-  - {fileID: 7632252395640955494}
 --- !u!1 &7768408840987691670
 GameObject:
   m_ObjectHideFlags: 0
@@ -14007,7 +14007,7 @@ MonoBehaviour:
   _pieceColor: 1
   _renderer: {fileID: 8427596863740884222}
   _grabbable: {fileID: 5826718261976735752}
-  _row: 2
+  _row: 1
   _column: 1
   _isSnappingPiece: 0
   _middle: {fileID: 0}
@@ -14315,8 +14315,8 @@ MonoBehaviour:
   _pieceColor: 1
   _renderer: {fileID: 5041061280148486063}
   _grabbable: {fileID: 1386804676580958885}
-  _row: 3
-  _column: 4
+  _row: 0
+  _column: 3
   _isSnappingPiece: 0
   _middle: {fileID: 0}
 --- !u!23 &5041061280148486063
@@ -14578,7 +14578,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 0
+  m_IsActive: 1
 --- !u!4 &107291485086951203
 Transform:
   m_ObjectHideFlags: 0

@@ -9,6 +9,7 @@ using UnityEngine.InputSystem;
 using UnityEngine.SceneManagement;
 using WebSocketSharp;
 using Meta.XR.MultiplayerBlocks.Fusion;
+using UnityEngine.UI;
 
 namespace Digiphy
 {
@@ -16,7 +17,9 @@ namespace Digiphy
     {
         [SerializeField] private AvatarSpawnerFusion _avatarSpawnerFusion = null;
         [SerializeField] private int _playerCount = 2;
-        private NetworkRunner _runner = null;
+        [SerializeField] private NetworkRunner _runner = null;
+        [SerializeField] private VoiceSetup _voiceSetup = null;
+        [SerializeField] private Button _createARoomButton;
         private List<SessionInfo> _sessions = new List<SessionInfo>();
 
         public List<SessionInfo> Sessions => _sessions;
@@ -24,7 +27,7 @@ namespace Digiphy
         private void Awake()
         {
             base.Awake();
-            _runner = gameObject.AddComponent<NetworkRunner>();
+            ConnectToLobby();
         }
 
         public void ConnectToLobby()
@@ -63,6 +66,7 @@ namespace Digiphy
 
         public void OnSessionListUpdated(NetworkRunner runner, List<SessionInfo> sessionList)
         {
+            _createARoomButton.interactable = true;
             if (_sessions == null || (_sessions.Count == 0 && sessionList.Count > 0))
             {
                 _sessions = sessionList;
@@ -75,13 +79,29 @@ namespace Digiphy
         {
             Debug.Log("On Player Joined");
 
-            if (player == runner.LocalPlayer) _avatarSpawnerFusion.SpawnAvatar();
+            if (player == runner.LocalPlayer)
+            {
+                _avatarSpawnerFusion?.SpawnAvatar(runner);
+                _voiceSetup.OnLoaded(runner);
+                ArSpawner.Instance?.JoinedNetworkSession(_runner);
+            }
         }
 
 
         public void OnPlayerLeft(NetworkRunner runner, PlayerRef player)
         {
             Debug.Log("On Player Left");
+            TestingSetupManager.Instance.PlayerDisconnected(runner, player);
+        }
+
+        public void OnDisconnectedFromServer(NetworkRunner runner, NetDisconnectReason reason)
+        {
+            Debug.Log("On Disconnected From Server");
+        }
+
+        public void OnShutdown(NetworkRunner runner, ShutdownReason shutdownReason)
+        {
+            Debug.Log("On Shut down, reason: " + shutdownReason.ToString());
         }
 
         private void OnApplicationQuit()
@@ -115,11 +135,6 @@ namespace Digiphy
         public void OnCustomAuthenticationResponse(NetworkRunner runner, Dictionary<string, object> data)
         {
             Debug.Log("On Custom Authentication Response");
-        }
-
-        public void OnDisconnectedFromServer(NetworkRunner runner, NetDisconnectReason reason)
-        {
-            Debug.Log("On Disconnected From Server");
         }
 
         public void OnHostMigration(NetworkRunner runner, HostMigrationToken hostMigrationToken)
@@ -160,12 +175,6 @@ namespace Digiphy
         public void OnSceneLoadStart(NetworkRunner runner)
         {
             Debug.Log("On Scene Load Start");
-        }
-
-        public void OnShutdown(NetworkRunner runner, ShutdownReason shutdownReason)
-        {
-            Debug.Log("On Shut down, reason: " + shutdownReason.ToString());
-            LeaveSession();
         }
 
         public void OnUserSimulationMessage(NetworkRunner runner, SimulationMessagePtr message)

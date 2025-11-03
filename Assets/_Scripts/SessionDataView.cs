@@ -19,7 +19,7 @@ namespace Digiphy
 
         public void ShowSession(string sessionName, int playerCount, Action<bool, string> onToggle, ToggleGroup toggleGroup)
         {
-            _sessionName.text = sessionName + " " + playerCount;
+            _sessionName.text = sessionName + "|" + playerCount;
             _toggle.onValueChanged.AddListener((isOn) => onToggle.Invoke(isOn, sessionName));
             _toggle.group = toggleGroup;
         }

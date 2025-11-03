@@ -1,11 +1,14 @@
 using Fusion;
+using OVR.OpenVR;
+using Photon.Voice;
 using System;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.UI;
 
 namespace Digiphy
 {
-    public class ArSpawner : Singleton<SpawnManager>
+    public class ArSpawner : Singleton<ArSpawner>
     {
         private enum RoomType
         {
@@ -19,24 +22,39 @@ namespace Digiphy
         [SerializeField] private GameObject _synchronizationLocationPrefab;
         [SerializeField] private RoomType _roomType;
         [SerializeField] private Vector3 _chessOffest;
+        [SerializeField] private Slider _rotationSlider;
         private NetworkRunner _runner;
+        private NetworkObject _spawnedRoom;
+        private GameObject _avatar;
 
-        public void PlayerJoined(NetworkRunner runner, PlayerRef player)
+        private void Start()
         {
-            if (player != runner.LocalPlayer) return;
+            _rotationSlider.value = PlayerPrefs.GetFloat("rotation");
+            _rotationSlider.onValueChanged.AddListener(RotationSliderChanged);
+        }
 
+        private void RotationSliderChanged(float value)
+        {
+            float rotation = 360 * value;
+            _spawnedRoom.transform.GetComponent<NetworkTransform>().enabled = false;
+            _spawnedRoom.transform.rotation = Quaternion.Euler(new Vector3(0, _spawnedRoom.transform.rotation.y + rotation, 0));
+            PlayerPrefs.SetFloat("rotation", value);
+        }
+
+        public void JoinedNetworkSession(NetworkRunner runner)
+        {
             _runner = runner;
             LoadAnchors();
         }
 
         private void Update()
         {
-            GameObject avatar = GameObject.Find("S0_L0_M1_V0_optimized_geom,0");
-            if (avatar == null) return;
+            if (_avatar != null) return;
+            _avatar = GameObject.Find("S0_L0_M1_V0_optimized_geom,0");
+            if (_avatar == null) return;
 
-            MeshRenderer renderer = avatar.GetComponent<MeshRenderer>();
+            MeshRenderer renderer = _avatar.GetComponent<MeshRenderer>();
             renderer.enabled = false;
-            enabled = false;
         }
 
         private async void LoadAnchors()
@@ -69,8 +87,9 @@ namespace Digiphy
             Pose pose;
             unboundAnchor.TryGetPose(out pose);
             Vector3 oldRotation = pose.rotation.eulerAngles;
-            Quaternion newRotation = Quaternion.Euler(new Vector3(0, oldRotation.y + 177, 0));
-            _runner.Spawn(_synchronizationLocationPrefab, pose.position + _chessOffest, newRotation);
+            float rotation = 360 * _rotationSlider.value;
+            Quaternion newRotation = Quaternion.Euler(new Vector3(0, oldRotation.y + rotation, 0));
+            _spawnedRoom = _runner.Spawn(_synchronizationLocationPrefab, pose.position + _chessOffest, newRotation);
         }
     }
 }

@@ -76,14 +76,17 @@ namespace ChessMainLoop
             {
                 for (int i = 1; BoardState.Instance.IsInBorders(row + i * _lookupTable[j, 0], column + i * _lookupTable[j, 1]); i++)
                 {
-                    SideColor _checkSide = BoardState.Instance.SimulateCheckState(row, column, row + i * _lookupTable[j, 0], column + i * _lookupTable[j, 1]);
-                    if (_checkSide == _attackerColor || _checkSide == SideColor.Both) break;
+                    int targetRow = row + i * _lookupTable[j, 0];
+                    int targetCol = column + i * _lookupTable[j, 1];
 
-                    _piece = BoardState.Instance.GetField(row + i * _lookupTable[j, 0], column + i * _lookupTable[j, 1]);
+                    Piece targetPiece = BoardState.Instance.GetField(targetRow, targetCol);
 
-                    if (_piece == null) return true;
-                    else if (_piece.PieceColor != _attackerColor) return true;
-                    else break;
+                    if (targetPiece != null && targetPiece.PieceColor == _attackerColor) break;
+
+                    SideColor checkSide = BoardState.Instance.SimulateCheckState(row, column, targetRow, targetCol);
+                    if (checkSide == SideColor.None) return true;
+
+                    if (targetPiece != null) break;
                 }
             }
 

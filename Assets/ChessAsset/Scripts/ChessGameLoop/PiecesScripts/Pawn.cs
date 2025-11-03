@@ -33,7 +33,7 @@ namespace ChessMainLoop
         private void CreateAttackSpace(int rowDirection, int columnDirection)
         {
             if (!BoardState.Instance.IsInBorders(_row + rowDirection, _column + columnDirection) == true) return;
-            Piece piece = BoardState.Instance.GetField(_row + rowDirection, _column +columnDirection);
+            Piece piece = BoardState.Instance.GetField(_row + rowDirection, _column + columnDirection);
             if (piece != null && piece.PieceColor != PieceColor)
             {
                 PathManager.CreatePathInSpotDirection(this, rowDirection, columnDirection);
@@ -67,7 +67,7 @@ namespace ChessMainLoop
             if (newRow == 0 || newRow == BoardState.Instance.BoardSize - 1)
             {
                 GameManager.Instance.PawnPromoting(this);
-            }    
+            }
         }
 
         public override bool IsAttackingKing(int row, int column)
@@ -76,13 +76,13 @@ namespace ChessMainLoop
 
             if (CheckStateCalculator.IsEnemyKingAtLocation(row, column, _direction, 1, PieceColor))
             {
-                return true;            
+                return true;
             }
 
             if (CheckStateCalculator.IsEnemyKingAtLocation(row, column, _direction, -1, PieceColor))
             {
                 return true;
-            }        
+            }
 
             return false;
         }
@@ -123,21 +123,6 @@ namespace ChessMainLoop
             if (GameEndCalculator.CanMoveToSpot(row, column, _direction, 0, PieceColor)) return true;
 
             return false;
-        }
-
-        internal override int GetPathLength()
-        {
-            throw new System.NotImplementedException();
-        }
-
-        internal override bool HasSinglePath()
-        {
-            throw new System.NotImplementedException();
-        }
-
-        internal override bool HasLongPath()
-        {
-            throw new System.NotImplementedException();
         }
     }
 }

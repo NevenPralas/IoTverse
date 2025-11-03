@@ -6,7 +6,7 @@ namespace ChessMainLoop
     public class King : Piece
     {
         /// <summary>
-        /// Lookup table containing knight3 movement directions
+        /// Lookup table containing knight movement directions
         /// </summary>
         private static readonly int[,] LookupMoves =
         {
@@ -21,8 +21,7 @@ namespace ChessMainLoop
 
         };
 
-        [SerializeField]
-        private List<Rook> _rooks;
+        [SerializeField] private List<Rook> _rooks;
 
         public override void CreatePath()
         {
@@ -53,7 +52,7 @@ namespace ChessMainLoop
 
             if (HasMoved) return;
 
-            foreach(Piece rook in _rooks)
+            foreach (Piece rook in _rooks)
             {
                 if (!rook.HasMoved) PathManager.CreateCastleSpot(this, rook);
             }
@@ -75,21 +74,6 @@ namespace ChessMainLoop
             }
 
             return false;
-        }
-
-        internal override int GetPathLength()
-        {
-            throw new System.NotImplementedException();
-        }
-
-        internal override bool HasSinglePath()
-        {
-            throw new System.NotImplementedException();
-        }
-
-        internal override bool HasLongPath()
-        {
-            throw new System.NotImplementedException();
         }
     }
 }

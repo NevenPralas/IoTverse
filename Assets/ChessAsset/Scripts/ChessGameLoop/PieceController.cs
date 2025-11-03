@@ -28,9 +28,6 @@ namespace ChessMainLoop
         /// </summary>
         private void PathSelected(PathPiece _path)
         {
-            if(!GameManager.Instance.PathSelected(_path)) return;
-
-            _activePiece.QuestUnselect();
             Piece _assignedEnemy = _path.AssignedPiece;
             Piece _assignedCastle = _path.AssignedCastle;
             GameManager.Instance.IsPieceMoving = true;
@@ -85,27 +82,33 @@ namespace ChessMainLoop
             Piece enemy = null;
             if (BoardState.Instance.IsInBorders(enemyRow, enemyColumn)) enemy = BoardState.Instance.GetField(enemyRow, enemyColumn);
             targetPosition.x = newRow * BoardState.Offset;
-            targetPosition.y = movingPiece.OriginalY;
+            targetPosition.y = movingPiece.transform.localPosition.y;
             targetPosition.z = newColumn * BoardState.Offset;
             movingPiece.Move(newRow, newColumn);
-            if (!movingPiece.IsSnappinPiece)
-            {           
+
+            if (movingPiece.IsSnappinPiece && movingPiece.PieceColor != GameManager.Instance.LocalPlayer)
+            {
+                if (enemy != null)
+                {
+                    enemy.Die();
+                }
+                _activePiece = null;
+                GameManager.Instance.IsPieceMoving = false;
+                GameManager.Instance.ChangeTurn();
+            }
+            else
+            {
+
                 AnimationManager.Instance.MovePiece(movingPiece, targetPosition, enemy);
                 while (AnimationManager.Instance.IsActive == true)
                 {
                     yield return null;
                 }
-            }
-            else
-            {
-                movingPiece.transform.localPosition = targetPosition;
-                AnimationManager.Instance.MoveSound.Play();
-                enemy?.Die();   
-            }
 
-            _activePiece = null;
-            GameManager.Instance.IsPieceMoving = false;
-            GameManager.Instance.ChangeTurn();
+                _activePiece = null;
+                GameManager.Instance.IsPieceMoving = false;
+                GameManager.Instance.ChangeTurn();
+            }
         }
 
         private IEnumerator PieceCastleMover(int callerRow, int callerColumn, int castleRow, int castleColumn)
@@ -132,6 +135,7 @@ namespace ChessMainLoop
             targetPositionRook.z = rookNewColumn * BoardState.Offset;
 
             king.Move(callerRow, columnMedian);
+
             AnimationManager.Instance.MovePiece(king, targetPositionKing, null);
             while (AnimationManager.Instance.IsActive == true)
             {
@@ -160,8 +164,6 @@ namespace ChessMainLoop
         /// </summary>
         public bool PieceSelected(Piece _piece)
         {
-            if(!GameManager.Instance.PieceSelected(_piece)) { return false; }
-
             if (_activePiece)
             {
                 _activePiece.IsActive = false;

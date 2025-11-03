@@ -81,35 +81,6 @@ namespace ChessMainLoop
         public abstract bool IsAttackingKing(int row, int column);
         public abstract bool CanMove(int row, int column);
 
-        internal abstract int GetPathLength();
-
-        internal abstract bool HasSinglePath();
-
-        internal abstract bool HasLongPath();
-
-        internal void QuestSelectSingle()
-        {
-            _selectedForQuest = true;
-            _renderer.material.color = Color.green;
-            _questDistance = 1;
-            if(_isSnappingPiece) _grabbable.MovingEnabled = true;
-        }
-
-        internal void QuestSelectLong()
-        {
-            _selectedForQuest = true;
-            _renderer.material.color = Color.green;
-            _questDistance = 3;
-            if (_isSnappingPiece) _grabbable.MovingEnabled = true;
-        }
-
-        public void QuestUnselect()
-        {
-            _selectedForQuest = false;
-            _renderer.material.color = _startColor;
-            if (_isSnappingPiece) _grabbable.MovingEnabled = false;
-        }
-
         private void Awake()
         {
             _grabbable.WhenPointerEventRaised += ProcessPointerEvent;
@@ -120,29 +91,27 @@ namespace ChessMainLoop
         private void Update()
         {
             if (!_isActive) return;
-            RaycastHit[] raycastHits = Physics.RaycastAll(transform.position, Vector3.down);
-            foreach(RaycastHit hit in raycastHits)
+            _howeredSnappingPath?.HoverEnd();
+            _howeredSnappingPath = null;
+            _howeredSnappingPiece?.HoverEnd();
+            _howeredSnappingPiece = null;
+            RaycastHit[] raycastHits = Physics.RaycastAll(_grabbable.transform.position, Vector3.down);
+            foreach (RaycastHit hit in raycastHits)
             {
                 if(hit.collider.TryGetComponent(out PathPiece path))
                 {
                     if (path == _howeredSnappingPath) return;
                     path.HoverEnter();
-                    _howeredSnappingPath?.HoverEnd();
                     _howeredSnappingPath = path;
                 }
                 else if(hit.collider.TryGetComponent(out Piece piece))
                 {
+                    if (piece == this) continue;
                     if (piece == _howeredSnappingPiece) return;
                     piece.PieceHowered();
-                    _howeredSnappingPiece?.HoverEnd();
                     _howeredSnappingPiece = piece;
                 }
             }
-
-            _howeredSnappingPath?.HoverEnd();
-            _howeredSnappingPath = null;
-            _howeredSnappingPiece?.HoverEnd();
-            _howeredSnappingPiece = null;
         }
 
         private void GrabbEnd()
@@ -170,6 +139,7 @@ namespace ChessMainLoop
                 }
                 else if (hit.collider.TryGetComponent(out Piece piece))
                 {
+                    if (piece == this) continue;
                     selectedPiece = piece;
                     break;
                 }

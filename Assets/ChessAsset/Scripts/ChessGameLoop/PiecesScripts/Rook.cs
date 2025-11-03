@@ -1,32 +1,18 @@
-using System.Collections.Generic;
 using UnityEngine;
 
 namespace ChessMainLoop
 {
     public class Rook : Piece
     {
-        [SerializeField]
-        private King _king;
+        [SerializeField] private King _king;
 
         public override void CreatePath()
         {
-            List<PathPiece> allPaths = PathManager.CreateVerticalPath(this);
-            List<PathPiece> availablePaths = new List<PathPiece>();
-
-            foreach (PathPiece path in allPaths)
+            PathManager.CreateVerticalPath(this);
+            if (!HasMoved && !_king.HasMoved)
             {
-                if (Mathf.Abs(path.Location.Row - Location.Row) <= _questDistance && Mathf.Abs(path.Location.Column - Location.Column) <= _questDistance
-                    && (Mathf.Abs(path.Location.Row - Location.Row) == _questDistance || Mathf.Abs(path.Location.Column - Location.Column) == _questDistance))
-                {
-                    availablePaths.Add(path);
-                }
+                PathManager.CreateCastleSpot(this, _king);
             }
-
-            if (availablePaths.Count == 0) availablePaths = allPaths;
-
-            PathPiece selectedPath = availablePaths[Random.Range(0, availablePaths.Count)];
-            selectedPath.SelectedForQuest();
-            GameManager.Instance.PathPieceSlectedForQuest(selectedPath);
         }
 
         public override bool IsAttackingKing(int row, int column)
@@ -37,21 +23,6 @@ namespace ChessMainLoop
         public override bool CanMove(int row, int column)
         {
             return GameEndCalculator.CanMoveVertical(row, column, PieceColor);
-        }
-
-        internal override int GetPathLength()
-        {
-            return PathManager.GetVerticalPathLength(this);
-        }
-
-        internal override bool HasSinglePath()
-        {
-            return PathManager.CheckVerticalPathAtDistance(this, 1);
-        }
-
-        internal override bool HasLongPath()
-        {
-            return PathManager.CheckVerticalPathAtDistance(this, 3);
         }
     }
 }

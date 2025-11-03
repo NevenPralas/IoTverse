@@ -14,25 +14,56 @@ namespace Digiphy
         [SerializeField] private SessionDataView _sessionDataViewPrefab = null;
         [SerializeField] private ToggleGroup _sessionListContainer = null;
         [SerializeField] private string _userType;
+        [SerializeField] private GameObject _roomJoinMenu;
+        [SerializeField] private GameObject _chessSettingMenu;
         private List<SessionDataView> _sessions = new List<SessionDataView>();
         private System.Random _rand = new System.Random();
         private string _sessionData;
 
         private void Awake()
         {
+            base.Awake();
             _refreshButton.onClick.AddListener(UpdateSessionList);
-            _joinButton.onClick.AddListener(() => FusionConnection.Instance.JoinSession(_sessionData));
+            _joinButton.onClick.AddListener(() => 
+            {
+                _roomJoinMenu.SetActive(false);
+                _chessSettingMenu.SetActive(true);
+                FusionConnection.Instance.JoinSession(_sessionData);
+            });
             _joinButton.interactable = false;
             _createRoomButton.onClick.AddListener(() =>
             {
+                _roomJoinMenu.SetActive(false);
+                _chessSettingMenu.SetActive(true);
                 string numbers = "";
 
-                for (int i = 0; i < numbers.Length; i++)
+                for (int i = 0; i < 4; i++)
                 {
                     numbers += _rand.Next(0, 100);
                 }
                 FusionConnection.Instance.CreateSession(_userType + "[" + numbers + "]");
             });
+        }
+
+        private void Update()
+        {
+            if (Input.GetKeyDown(KeyCode.W))
+            {
+                _roomJoinMenu.SetActive(false);
+                _chessSettingMenu.SetActive(true);
+                string numbers = "";
+
+                for (int i = 0; i < 4; i++)
+                {
+                    numbers += _rand.Next(0, 100);
+                }
+                FusionConnection.Instance.CreateSession(_userType + "[" + numbers + "]");
+            }
+
+            if (Input.GetKeyDown(KeyCode.E))
+            {
+                UpdateSessionList();
+            }
         }
 
         public void UpdateSessionList()

@@ -8,9 +8,9 @@ namespace ChessMainLoop
             bool blackCheck = false;
             int gridSize = grid.GetLength(0);
 
-            for(int i = 0; i < gridSize; i++)
+            for (int i = 0; i < gridSize; i++)
             {
-                for(int j = 0; j < gridSize; j++)
+                for (int j = 0; j < gridSize; j++)
                 {
                     if (grid[i, j] == null)
                     {
@@ -28,12 +28,13 @@ namespace ChessMainLoop
                             blackCheck = true;
                         }
                     }
-                }            
+                }
             }
 
             return whiteCheck ? blackCheck ? SideColor.Both : SideColor.White : blackCheck ? SideColor.Black : SideColor.None;
         }
 
+        #region Direction Lookup Tables
         private static readonly int[,] DiagonalLookup =
         {
            { 1, 1 },
@@ -49,6 +50,7 @@ namespace ChessMainLoop
            { 0, 1 },
            { 0, -1 }
         };
+        #endregion
 
         public static bool IsAttackingKingDiagonal(int row, int column, SideColor attackerColor)
         {
@@ -62,8 +64,6 @@ namespace ChessMainLoop
 
         private static bool IsAttackingKingInDirection(int row, int column, int[,] directionLookupTable, SideColor attackerColor)
         {
-
-            return false;
             Piece piece;
 
             for (int j = 0; j < directionLookupTable.GetLength(0); j++)
@@ -84,13 +84,13 @@ namespace ChessMainLoop
 
         public static bool IsEnemyKingAtLocation(int row, int column, int rowDirection, int columnDirection, SideColor attackerColor)
         {
-            return false;
+
             if (BoardState.Instance.IsInBorders(row + rowDirection, column + columnDirection))
             {
                 Piece piece = BoardState.Instance.GetField(row + rowDirection, column + columnDirection);
 
                 if (piece == null) return false;
-                if(piece is King && piece.PieceColor != attackerColor) return true;
+                if (piece is King && piece.PieceColor != attackerColor) return true;
             }
 
             return false;
