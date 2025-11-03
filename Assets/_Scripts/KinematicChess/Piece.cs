@@ -43,14 +43,14 @@ namespace KinematicChess
         {
             _selected = true;
             _renderer.material.color = Color.green;
-            _grabbable.MovingEnabled = true;
+            _grabbable.enabled = true;
         }
 
         public void Unselected()
         {
             _renderer.material.color = _startColor;
             _selected = false;
-            _grabbable.MovingEnabled = true;
+            _grabbable.enabled = true;
         }
 
         public void ProcessPointerEvent(PointerEvent evt)

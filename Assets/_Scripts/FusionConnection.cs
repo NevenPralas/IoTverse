@@ -81,8 +81,7 @@ namespace Digiphy
 
             if (player == runner.LocalPlayer)
             {
-                _avatarSpawnerFusion?.SpawnAvatar(runner);
-                _voiceSetup.OnLoaded(runner);
+                _avatarSpawnerFusion?.SpawnAvatar();
                 ArSpawner.Instance?.JoinedNetworkSession(_runner);
             }
         }
