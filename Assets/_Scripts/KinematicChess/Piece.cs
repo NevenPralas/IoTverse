@@ -26,7 +26,7 @@ namespace KinematicChess
         public override void Spawned()
         {
             base.Spawned();
-            transform.localPosition = _initialPosition; 
+            transform.localPosition = _initialPosition;
         }
 
         public void Init()
@@ -43,14 +43,14 @@ namespace KinematicChess
         {
             _selected = true;
             _renderer.material.color = Color.green;
-            _grabbable.enabled = true;
+            _grabbable.MovingEnabled = true;
         }
 
         public void Unselected()
         {
             _renderer.material.color = _startColor;
             _selected = false;
-            _grabbable.enabled = true;
+            _grabbable.MovingEnabled = true;
         }
 
         public void ProcessPointerEvent(PointerEvent evt)
@@ -94,7 +94,7 @@ namespace KinematicChess
 
         private void GrabbEnd()
         {
-            if(_fieldsInContact.Count == 0) return;
+            if (_fieldsInContact.Count == 0) return;
             Field selectedField = _fieldsInContact.FirstOrDefault(field => field.IsSelected);
             if (selectedField == null) GameManager.Instance.PieceGrabEnd(false);
             else

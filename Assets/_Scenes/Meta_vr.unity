@@ -4934,7 +4934,10 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 6110729485127354589, guid: 9cea98e00cfee5f478a01f61bcb00a59, type: 3}
       insertIndex: -1
       addedObject: {fileID: 1755817051}
-    m_AddedComponents: []
+    m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 2219855934584165622, guid: 9cea98e00cfee5f478a01f61bcb00a59, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 869611520}
   m_SourcePrefab: {fileID: 100100000, guid: 9cea98e00cfee5f478a01f61bcb00a59, type: 3}
 --- !u!4 &198405048 stripped
 Transform:
@@ -20006,6 +20009,36 @@ Transform:
   m_Children: []
   m_Father: {fileID: 1200852642}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!1 &869611513 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 2219855934584165622, guid: 9cea98e00cfee5f478a01f61bcb00a59, type: 3}
+  m_PrefabInstance: {fileID: 198405047}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &869611520
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 869611513}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: cb8b883921463fc438de6b49f2b6d1b0, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  angle1: 2
+  angle2: 22
+  angle3: 12
+  angle4: 32
+  textureResolution: 1024
+  autoUpdate: 1
+  meshSegmentsX: 80
+  meshSegmentsZ: 80
+  minGlobalTemp: 0
+  maxGlobalTemp: 40
+  coldColor: {r: 0, g: 0, b: 1, a: 1}
+  midColor: {r: 1, g: 0.5, b: 0, a: 1}
+  warmColor: {r: 1, g: 0, b: 0, a: 1}
 --- !u!1 &870115735
 GameObject:
   m_ObjectHideFlags: 0
