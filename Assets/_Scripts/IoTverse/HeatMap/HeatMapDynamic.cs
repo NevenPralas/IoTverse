@@ -11,19 +11,19 @@ public class HeatMapDynamic : MonoBehaviour
     public float angle4 = 10.8f; // Gornji desni kut
 
     [Header("Postavke")]
-    [Tooltip("Veća rezolucija = glađi prijelazi")]
+    [Tooltip("Veca rezolucija = gladji prijelazi")]
     public int textureResolution = 1024;
     public bool autoUpdate = true;
 
     [Header("Mesh postavke")]
-    [Tooltip("Više segmenata = glađi gradijent (50-100 preporučeno)")]
+    [Tooltip("Vise segmenata = gladji gradijent (cca. 50-100)")]
     public int meshSegmentsX = 80;
     public int meshSegmentsZ = 80;
 
     [Header("Boje gradienta")]
     public Color coldColor = new Color(0, 0, 1);     // Plava  (0°C)
     public Color warmColor = new Color(1, 0, 0);     // Crvena (40°C)
-    public Color midColor = new Color(1, 0.5f, 0);  // Narančasta (20°C)
+    public Color midColor = new Color(1, 0.5f, 0);  // Narancasta (20°C)
 
     private Texture2D heatmapTexture;
     private Material planeMaterial;
@@ -34,15 +34,15 @@ public class HeatMapDynamic : MonoBehaviour
 
     void Start()
     {
-        // Prvo generiraj mesh s originalnim dimenzijama
+        // Mesh s originalnim dimenzijama
         GenerateMeshFromExistingPlane();
 
-        // Stvori teksturu
+        // Stvaranje teksture
         heatmapTexture = new Texture2D(textureResolution, textureResolution);
         heatmapTexture.filterMode = FilterMode.Bilinear;
         heatmapTexture.wrapMode = TextureWrapMode.Clamp;
 
-        // Postavi materijal
+        // Postavljanje materijala
         Renderer renderer = GetComponent<Renderer>();
         if (renderer != null)
         {
@@ -68,12 +68,12 @@ public class HeatMapDynamic : MonoBehaviour
 
     void GenerateMeshFromExistingPlane()
     {
-        // Dohvati dimenzije iz skale
+        // Dohvacanje dimenzije iz lokalnog skaliranja
         Vector3 scale = transform.localScale;
         float width = 10f * scale.x; // Unity Plane je 10x10
         float depth = 10f * scale.z;
 
-        // Generiraj novi mesh
+        // Generiranje novog mesha
         MeshFilter meshFilter = GetComponent<MeshFilter>();
         if (meshFilter == null)
             meshFilter = gameObject.AddComponent<MeshFilter>();
@@ -89,7 +89,7 @@ public class HeatMapDynamic : MonoBehaviour
         Vector2[] uv = new Vector2[vertCount];
         Color[] colors = new Color[vertCount];
 
-        // Vertexi
+        // Vertex
         for (int z = 0; z <= meshSegmentsZ; z++)
         {
             for (int x = 0; x <= meshSegmentsX; x++)

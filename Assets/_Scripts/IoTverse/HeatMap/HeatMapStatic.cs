@@ -1,17 +1,15 @@
-﻿using System.Collections;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using UnityEngine;
 
 public class HeatMapStatic : MonoBehaviour
 {
     [Header("Temperaturne vrijednosti na kutovima")]
-    public float angle1 = 10.5f; // Donji lijevi kut
-    public float angle2 = 15.4f; // Donji desni kut
-    public float angle3 = 12.2f; // Gornji lijevi kut
-    public float angle4 = 10.8f; // Gornji desni kut
+    public float angle1 = 10.5f;
+    public float angle2 = 15.4f;
+    public float angle3 = 12.2f;
+    public float angle4 = 10.8f;
 
     [Header("Postavke")]
-    [Tooltip("Veća rezolucija = glađi prijelazi")]
     public int textureResolution = 1024;
     public bool autoUpdate = true;
 
@@ -19,22 +17,76 @@ public class HeatMapStatic : MonoBehaviour
     public int meshSegmentsX = 80;
     public int meshSegmentsZ = 80;
 
-    [Header("GLOBALNA TEMPERATURNA SKALA (NE MIJENJA SE)")]
+    [Header("Globalna temperaturna ljestvica (STATIC)")]
     public float minGlobalTemp = 0f;
     public float maxGlobalTemp = 40f;
 
     [Header("Boje gradienta")]
-    public Color coldColor = new Color(0, 0, 1);        // Plava (0°C)
-    public Color midColor = new Color(1f, 0.5f, 0f);    // Narančasta (20°C)
-    public Color warmColor = new Color(1, 0, 0);        // Crvena (40°C)
+    public Color coldColor = new Color(0, 0, 1);
+    public Color midColor = new Color(1f, 0.5f, 0f);
+    public Color warmColor = new Color(1, 0, 0);
+
+    // --- NEW (TOGGLE) ---
+    public bool heatmapEnabled = true;
+    private Mesh originalMesh;
+    private Material originalMaterial;
 
     private Texture2D heatmapTexture;
     private Material planeMaterial;
     private float previousAngle1, previousAngle2, previousAngle3, previousAngle4;
+
     private bool meshGenerated = false;
+    private float planeWidth;
+    private float planeDepth;
+
 
     void Start()
     {
+        // Save original mesh & material
+        originalMesh = GetComponent<MeshFilter>().mesh;
+        originalMaterial = GetComponent<Renderer>().material;
+
+        // Read REAL size of the plane (world space)
+        planeWidth = originalMesh.bounds.size.x; // *transform.localScale.x
+        planeDepth = originalMesh.bounds.size.z; // *transform.localScale.z
+
+        ActivateHeatmap();
+        SaveCurrentAngles();
+    }
+
+
+    void Update()
+    {
+        if (!heatmapEnabled)
+            return;
+
+        if (autoUpdate && HasValuesChanged())
+        {
+            GenerateHeatmap();
+            SaveCurrentAngles();
+        }
+    }
+
+
+    // =====================================================
+    //   PUBLIC METODA ZA UISwitcher (A BUTTON TOGGLE)
+    // =====================================================
+    public void ToggleHeatmap()
+    {
+        if (heatmapEnabled)
+            DeactivateHeatmap();
+        else
+            ActivateHeatmap();
+    }
+
+
+    // =====================================================
+    //                  ACTIVATION LOGIC
+    // =====================================================
+    private void ActivateHeatmap()
+    {
+        heatmapEnabled = true;
+
         GenerateMeshFromExistingPlane();
 
         heatmapTexture = new Texture2D(textureResolution, textureResolution);
@@ -52,27 +104,26 @@ public class HeatMapStatic : MonoBehaviour
         }
 
         GenerateHeatmap();
-        SaveCurrentAngles();
     }
 
-    void Update()
+    private void DeactivateHeatmap()
     {
-        if (autoUpdate && HasValuesChanged())
-        {
-            GenerateHeatmap();
-            SaveCurrentAngles();
-        }
+        heatmapEnabled = false;
+
+        Renderer renderer = GetComponent<Renderer>();
+        renderer.material = originalMaterial;
+
+        MeshFilter mf = GetComponent<MeshFilter>();
+        mf.mesh = originalMesh;
     }
 
-    // ---------------------------------------------------------
-    // MESH GENERACIJA
-    // ---------------------------------------------------------
-    void GenerateMeshFromExistingPlane()
-    {
-        Vector3 scale = transform.localScale;
-        float width = 10f * scale.x;
-        float depth = 10f * scale.z;
 
+    // =====================================================
+    //               ORIGINAL HEATMAP CODE
+    // =====================================================
+
+    public void GenerateMeshFromExistingPlane()
+    {
         MeshFilter meshFilter = GetComponent<MeshFilter>();
         if (meshFilter == null) meshFilter = gameObject.AddComponent<MeshFilter>();
 
@@ -96,10 +147,12 @@ public class HeatMapStatic : MonoBehaviour
                 float u = x / (float)meshSegmentsX;
                 float v = z / (float)meshSegmentsZ;
 
-                float xPos = (u - 0.5f) * width;
-                float zPos = (v - 0.5f) * depth;
+                float xPos = (u - 0.5f) * planeWidth;
+                float zPos = (v - 0.5f) * planeDepth;
 
-                vertices[i] = new Vector3(xPos, 0, zPos);
+                float yPos = originalMesh.vertices[Mathf.Clamp(i, 0, originalMesh.vertices.Length - 1)].y;
+
+                vertices[i] = new Vector3(xPos, yPos, zPos);
                 uv[i] = new Vector2(u, v);
 
                 float temp = BilinearInterpolation(u, v, angle1, angle2, angle3, angle4);
@@ -134,8 +187,7 @@ public class HeatMapStatic : MonoBehaviour
 
         meshFilter.mesh = mesh;
 
-        transform.localScale = new Vector3(0.25f, 1, 0.25f);
-
+        // Collider update
         MeshCollider collider = GetComponent<MeshCollider>();
         if (collider == null) collider = gameObject.AddComponent<MeshCollider>();
         collider.sharedMesh = mesh;
@@ -159,9 +211,6 @@ public class HeatMapStatic : MonoBehaviour
         previousAngle4 = angle4;
     }
 
-    // ---------------------------------------------------------
-    // HEATMAP GENERACIJA (TEKSTURA)
-    // ---------------------------------------------------------
     void GenerateHeatmap()
     {
         for (int y = 0; y < textureResolution; y++)
@@ -182,9 +231,6 @@ public class HeatMapStatic : MonoBehaviour
             UpdateVertexColors();
     }
 
-    // ---------------------------------------------------------
-    // STATIC GLOBAL COLOR MAPPING 0°C → 40°C
-    // ---------------------------------------------------------
     Color GetColorFromTemperature(float temp)
     {
         float t = Mathf.InverseLerp(minGlobalTemp, maxGlobalTemp, temp);
@@ -214,9 +260,6 @@ public class HeatMapStatic : MonoBehaviour
         mesh.colors = colors;
     }
 
-    // ---------------------------------------------------------
-    // BILINEARNA INTERPOLACIJA
-    // ---------------------------------------------------------
     float BilinearInterpolation(float u, float v, float q11, float q21, float q12, float q22)
     {
         float bottom = Mathf.Lerp(q11, q21, u);
