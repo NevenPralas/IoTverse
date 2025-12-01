@@ -32,8 +32,8 @@ public class CreateRoomInit : MonoBehaviour
             {
                 Debug.LogError("Pronasao Joint RightHandWrist u LocalAvatar hijerarhiji!");
                 GameObject instance = Instantiate(myPrefab, parent);
-                instance.transform.localPosition = new Vector3(0.118f, -0.034f, -0.017f);
-                instance.transform.localRotation = new Quaternion(33.022f, -197.833f, 2.98f, 0);
+                instance.transform.localPosition = new Vector3(0.121f, -0.0296f, -0.0255f);
+                instance.transform.localRotation = Quaternion.Euler(33.022f, 162.167f, 2.98f);
             }
         }
     }
