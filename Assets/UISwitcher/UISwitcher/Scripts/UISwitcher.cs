@@ -15,10 +15,18 @@ namespace UISwitcher
         [SerializeField] private Color onColor, offColor, nullColor;
         [SerializeField] private RectTransform tipRect;
 
+        private GameObject Aim;
+        private GameObject LaserBeam;
+        private GameObject AimObject;
+
         protected override void Start()
         {
             base.Start();
             heatmap = FindObjectOfType<HeatMapStatic>();
+
+            Aim = GameObject.Find("AimController");
+            LaserBeam = GameObject.Find("LaserBeam");
+            AimObject = GameObject.Find("AimObject");
         }
 
         protected override void OnChanged(bool? obj)
@@ -71,6 +79,45 @@ namespace UISwitcher
 
             bool? v = isOnNullable;
             isOnNullable = !(v ?? false);
+
+            if (Aim.GetComponent<AimOnGrip>().isActiveAndEnabled)
+            {
+                Aim.GetComponent<AimOnGrip>().enabled = false;
+            }
+            else
+            {
+                Aim.GetComponent<AimOnGrip>().enabled = true;
+            }
+
+            if (LaserBeam.activeSelf)
+            {
+                LaserBeam.SetActive(false);
+            }
+            else
+            {
+                Invoke("InvokeLaserBeam", 0.5f);
+            }
+
+            if (AimObject.activeSelf)
+            {
+                AimObject.SetActive(false);
+            }
+            else
+            {
+                Invoke("InvokeAimObject", 0.5f);
+            }
+
         }
+
+        void InvokeLaserBeam()
+        {
+            LaserBeam.SetActive(true);
+        }
+
+        void InvokeAimObject()
+        {
+            AimObject.SetActive(true);
+        }
+
     }
 }
