@@ -1,21 +1,18 @@
 ﻿using System.Collections;
+using TMPro;
 using UnityEngine;
 using UnityEngine.XR;
 
 public class AimOnGrip : MonoBehaviour
 {
     [Header("References")]
-    [SerializeField] private GameObject aimObject;           // prefab / objekt koji će se pojaviti
-    [SerializeField] private Transform rightHandAnchor;     // obično RightHandAnchor iz OVRCameraRig
+    [SerializeField] private GameObject aimObject;
+    [SerializeField] private Transform rightHandAnchor;
 
     [Header("Behavior")]
-    [Tooltip("Udaljenost od ruke kada nema hit-a")]
     [SerializeField] private float defaultDistance = 0.45f;
-    [Tooltip("Koristi raycast da nišan stane na površinu (ako ima hit)")]
     [SerializeField] private bool useRaycast = true;
-    [Tooltip("Layer mask za raycast (npr. Environment)")]
     [SerializeField] private LayerMask raycastMask = ~0;
-    [Tooltip("Maks udaljenost raycast-a")]
     [SerializeField] private float raycastMaxDistance = 10f;
 
     [Header("Smoothing & Visuals")]
@@ -30,49 +27,47 @@ public class AimOnGrip : MonoBehaviour
     [Header("Haptics (optional)")]
     [SerializeField] private bool useHaptics = true;
     [SerializeField] private float hapticDuration = 0.05f;
-    [SerializeField] private float hapticStrength = 0.5f; // 0..1
+    [SerializeField] private float hapticStrength = 0.5f;
 
     [Header("Laser Beam")]
     [SerializeField] private LineRenderer laserLine;
     [SerializeField] private float laserMaxLength = 10f;
 
     [Header("Material Flash")]
-    public Material flashMaterial;          // materijal za kratki flash
-    public Material defaultLaserMaterial;   // default materijal LineRenderer-a
-    public Material defaultAimMaterial;     // default materijal nišana
-    public float flashDuration = 1f;      // trajanje flash efekta
+    public Material flashMaterial;
+    public Material defaultLaserMaterial;
+    public Material defaultAimMaterial;
+    public float flashDuration = 1f;
 
-    // internal
     private Vector3 velocity;
     private Quaternion rotVelocity = Quaternion.identity;
     private bool isVisible = false;
     private bool flashing = false;
 
-    // A button usage
-    private static readonly InputFeatureUsage<bool> AButtonUsage = CommonUsages.primaryButton;
-
+    public GameObject text;
+    public GameObject canvas;
+    public GameObject portal;
     void Start()
     {
         if (aimObject == null)
         {
-            Debug.LogWarning("AimOnGrip: aimObject nije postavljen u inspectoru.");
+            Debug.LogWarning("AimOnGrip: aimObject nije postavljen.");
         }
         else
         {
-            aimObject.SetActive(true); // držimo aktivnim da lakše skaliramo i pozicioniramo
+            aimObject.SetActive(true);
             aimObject.transform.localScale = hiddenScale;
         }
 
-        // pokušaj automatski naći RightHandAnchor ako nije postavljen
         if (rightHandAnchor == null)
         {
             var r = GameObject.Find("RightHandAnchor");
             if (r != null) rightHandAnchor = r.transform;
         }
 
-        // postavi default materijale ako nisu postavljeni
         if (laserLine != null && defaultLaserMaterial == null)
             defaultLaserMaterial = laserLine.material;
+
         if (aimObject != null && defaultAimMaterial == null)
         {
             Renderer r = aimObject.GetComponent<Renderer>();
@@ -83,34 +78,46 @@ public class AimOnGrip : MonoBehaviour
 
     void Update()
     {
-        // --- 1) Čitanje grip gumba ---
         float gripValue = OVRInput.Get(OVRInput.Axis1D.SecondaryHandTrigger);
         bool gripHeld = gripValue > 0.12f;
 
-        // --- 2) Provjera A button-a dok je grip držen ---
-        if (gripHeld && OVRInput.GetDown(OVRInput.Button.One)) // A button
-        {
-            StartCoroutine(FlashMaterials());
-        }
-
-        // --- 3) Raycast prema Environment layeru ---
+        // ---------------------------------------------------
+        // RAYCAST
+        // ---------------------------------------------------
         bool hitEnvironment = false;
         Vector3 targetPos = Vector3.zero;
         Quaternion targetRot = Quaternion.identity;
+
+        RaycastHit hitInfo = new RaycastHit();
 
         if (gripHeld && rightHandAnchor != null)
         {
             Ray ray = new Ray(rightHandAnchor.position, rightHandAnchor.forward);
 
-            if (Physics.Raycast(ray, out RaycastHit hit, raycastMaxDistance, raycastMask))
+            if (Physics.Raycast(ray, out hitInfo, raycastMaxDistance, raycastMask))
             {
                 hitEnvironment = true;
-                targetPos = hit.point + hit.normal * 0.01f;
-                targetRot = Quaternion.LookRotation(-hit.normal);
+                targetPos = hitInfo.point + hitInfo.normal * 0.01f;
+                targetRot = Quaternion.LookRotation(-hitInfo.normal);
             }
         }
 
-        // --- 4) Vidljivost nišana ---
+        // ---------------------------------------------------
+        // A BUTTON — tek SAD, nakon raycasta!
+        // ---------------------------------------------------
+        if (gripHeld && OVRInput.GetDown(OVRInput.Button.One))
+        {
+            StartCoroutine(FlashMaterials());
+
+            if (hitEnvironment)
+            {
+                LogTemperatureAtHit(hitInfo);
+            }
+        }
+
+        // ---------------------------------------------------
+        // VISIBLE TOGGLE
+        // ---------------------------------------------------
         bool shouldShow = gripHeld && hitEnvironment;
 
         if (shouldShow && !isVisible)
@@ -123,7 +130,9 @@ public class AimOnGrip : MonoBehaviour
             isVisible = false;
         }
 
-        // --- 5) Update pozicije/rotacije i scale nišana ---
+        // ---------------------------------------------------
+        // MOVE AIM OBJECT
+        // ---------------------------------------------------
         if (aimObject != null)
         {
             if (smoothMovement)
@@ -158,19 +167,79 @@ public class AimOnGrip : MonoBehaviour
                 Time.deltaTime * scaleShowSpeed);
         }
 
-        // --- 6) Update laserske zrake ---
+        // ---------------------------------------------------
+        // LASER
+        // ---------------------------------------------------
         if (laserLine != null)
         {
             if (shouldShow && rightHandAnchor != null)
             {
                 laserLine.enabled = true;
                 laserLine.SetPosition(0, rightHandAnchor.position);
-                laserLine.SetPosition(1, hitEnvironment ? targetPos : rightHandAnchor.position + rightHandAnchor.forward * laserMaxLength);
+                laserLine.SetPosition(1, hitEnvironment ?
+                    targetPos :
+                    rightHandAnchor.position + rightHandAnchor.forward * laserMaxLength);
             }
             else
             {
                 laserLine.enabled = false;
             }
+        }
+    }
+
+    private void LogTemperatureAtHit(RaycastHit hit)
+    {
+        // Postavljanje Canvasa na mjesto klika
+        float heightOffset = 1.2f; // koliko iznad pogotka
+        Vector3 targetPos = hit.point + Vector3.up * heightOffset;
+        canvas.transform.position = targetPos;
+
+        Transform cam = Camera.main != null ? Camera.main.transform : null;
+
+        if (cam != null)
+        {
+            Vector3 lookDir = cam.position - canvas.transform.position;
+            lookDir.y = 0; // ostaje uspravan
+
+            if (lookDir.sqrMagnitude > 0.001f)
+            {
+                // Okreni prema igracu
+                canvas.transform.rotation = Quaternion.LookRotation(lookDir);
+
+                // Ispravi zrcaljenje (dodaj 180°)
+                canvas.transform.Rotate(0, 180f, 0, Space.Self);
+            }
+        }
+
+        canvas.GetComponent<Canvas>().enabled = true;
+        portal.SetActive(true);
+
+        Vector2 uv = hit.textureCoord;
+
+        HeatMapStatic hm = hit.collider.GetComponent<HeatMapStatic>();
+        if (hm == null) hm = hit.collider.GetComponentInParent<HeatMapStatic>();
+
+        if (hm == null)
+        {
+            Debug.LogWarning("[AimOnGrip] Hit object has no HeatMapStatic.");
+            return;
+        }
+
+        bool uvValid = !(Mathf.Approximately(uv.x, 0f) && Mathf.Approximately(uv.y, 0f));
+
+        float temp;
+
+        if (uvValid)
+        {
+            temp = hm.GetTemperatureAtUV(uv);
+            Debug.Log($"[HeatMap] Temperature at UV {uv} = {temp:F2}°C");
+
+            text.GetComponent<TextMeshProUGUI>().text = $"Temperature = {temp:F2}°C";
+        }
+        else
+        {
+            temp = hm.GetTemperatureAtPointWorld(hit.point);
+            Debug.Log($"[HeatMap] Temperature at world {hit.point} = {temp:F2}°C");
         }
     }
 

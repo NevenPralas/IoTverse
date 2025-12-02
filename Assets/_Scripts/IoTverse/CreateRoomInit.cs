@@ -1,11 +1,17 @@
 using System.Collections;
 using System.Collections.Generic;
+using TMPro;
 using UnityEngine;
 
 public class CreateRoomInit : MonoBehaviour
 {
     public GameObject floor;
     public GameObject myPrefab;
+
+    public GameObject text1;
+    public GameObject text2;
+    public GameObject text3;
+    public GameObject text4;
 
     public void SetEverything()
     {
@@ -34,6 +40,11 @@ public class CreateRoomInit : MonoBehaviour
                 GameObject instance = Instantiate(myPrefab, parent);
                 instance.transform.localPosition = new Vector3(0.0049f, 0.0208f, 0.0042f);
                 instance.transform.localRotation = Quaternion.Euler(-165.493f, 161.189f, -2.58099f);
+
+                text1.GetComponent<TextMeshProUGUI>().enabled = true;
+                text2.GetComponent<TextMeshProUGUI>().enabled = true;
+                text3.GetComponent<TextMeshProUGUI>().enabled = true;
+                text4.GetComponent<TextMeshProUGUI>().enabled = true;
             }
         }
     }

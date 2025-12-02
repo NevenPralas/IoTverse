@@ -26,7 +26,7 @@ public class HeatMapStatic : MonoBehaviour
     public Color midColor = new Color(1f, 0.5f, 0f);
     public Color warmColor = new Color(1, 0, 0);
 
-    // --- NEW (TOGGLE) ---
+    // Toggle
     public bool heatmapEnabled = true;
     private Mesh originalMesh;
     private Material originalMaterial;
@@ -39,21 +39,17 @@ public class HeatMapStatic : MonoBehaviour
     private float planeWidth;
     private float planeDepth;
 
-
     void Start()
     {
-        // Save original mesh & material
         originalMesh = GetComponent<MeshFilter>().mesh;
         originalMaterial = GetComponent<Renderer>().material;
 
-        // Read REAL size of the plane (world space)
-        planeWidth = originalMesh.bounds.size.x; // *transform.localScale.x
-        planeDepth = originalMesh.bounds.size.z; // *transform.localScale.z
+        planeWidth = originalMesh.bounds.size.x;
+        planeDepth = originalMesh.bounds.size.z;
 
         ActivateHeatmap();
         SaveCurrentAngles();
     }
-
 
     void Update()
     {
@@ -67,10 +63,6 @@ public class HeatMapStatic : MonoBehaviour
         }
     }
 
-
-    // =====================================================
-    //   PUBLIC METODA ZA UISwitcher (A BUTTON TOGGLE)
-    // =====================================================
     public void ToggleHeatmap()
     {
         if (heatmapEnabled)
@@ -79,10 +71,6 @@ public class HeatMapStatic : MonoBehaviour
             ActivateHeatmap();
     }
 
-
-    // =====================================================
-    //                  ACTIVATION LOGIC
-    // =====================================================
     private void ActivateHeatmap()
     {
         heatmapEnabled = true;
@@ -116,11 +104,6 @@ public class HeatMapStatic : MonoBehaviour
         MeshFilter mf = GetComponent<MeshFilter>();
         mf.mesh = originalMesh;
     }
-
-
-    // =====================================================
-    //               ORIGINAL HEATMAP CODE
-    // =====================================================
 
     public void GenerateMeshFromExistingPlane()
     {
@@ -187,7 +170,6 @@ public class HeatMapStatic : MonoBehaviour
 
         meshFilter.mesh = mesh;
 
-        // Collider update
         MeshCollider collider = GetComponent<MeshCollider>();
         if (collider == null) collider = gameObject.AddComponent<MeshCollider>();
         collider.sharedMesh = mesh;
@@ -279,5 +261,33 @@ public class HeatMapStatic : MonoBehaviour
         angle3 = t3;
         angle4 = t4;
         GenerateHeatmap();
+    }
+
+    // =====================================================
+    //   *** NEW: DOHVAT TEMPERATURE ***
+    // =====================================================
+
+    public float GetTemperatureAtUV(Vector2 uv)
+    {
+        return BilinearInterpolation(uv.x, uv.y, angle1, angle2, angle3, angle4);
+    }
+
+    public float GetTemperatureAtPointWorld(Vector3 worldPoint)
+    {
+        Vector3 local = transform.InverseTransformPoint(worldPoint);
+
+        float meshWidth = originalMesh.bounds.size.x * transform.lossyScale.x;
+        float meshDepth = originalMesh.bounds.size.z * transform.lossyScale.z;
+
+        if (meshWidth == 0) meshWidth = planeWidth * transform.lossyScale.x;
+        if (meshDepth == 0) meshDepth = planeDepth * transform.lossyScale.z;
+
+        float u = (local.x / meshWidth) + 0.5f;
+        float v = (local.z / meshDepth) + 0.5f;
+
+        u = Mathf.Clamp01(u);
+        v = Mathf.Clamp01(v);
+
+        return GetTemperatureAtUV(new Vector2(u, v));
     }
 }
