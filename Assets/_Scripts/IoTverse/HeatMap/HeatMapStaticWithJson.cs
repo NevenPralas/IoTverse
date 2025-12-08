@@ -2,6 +2,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Networking;
+using XCharts.Runtime;
 
 public class HeatMapStaticWithJson : MonoBehaviour
 {
@@ -45,8 +46,30 @@ public class HeatMapStaticWithJson : MonoBehaviour
     MeasurementData data;
     int currentIndex = 0;
 
+    public GameObject lineChart;
+    
+
     void Start()
     {
+
+        //IGRA s chartom - pocetak
+        LineChart chart = lineChart.GetComponent<LineChart>();
+        Serie serie0 = chart.series[0];
+
+        Debug.Log("serie count: " + serie0.dataCount);
+
+        for (int i = 0; i < serie0.dataCount; i++)
+        {
+            SerieData item = serie0.data[i];
+
+            // Y vrijednost data tocke
+            float value = (float)item.data[1]; // 0 = X, 1 = Y
+
+            Debug.Log("Data index " + i + " = " + value);
+        }
+        // IGRA s chartom - kraj
+
+
         originalMesh = GetComponent<MeshFilter>().mesh;
         originalMaterial = GetComponent<Renderer>().material;
 
@@ -57,6 +80,7 @@ public class HeatMapStaticWithJson : MonoBehaviour
         SaveCurrentAngles();
 
         StartCoroutine(FetchJson());
+
     }
 
     void Update()
@@ -69,6 +93,8 @@ public class HeatMapStaticWithJson : MonoBehaviour
             GenerateHeatmap();
             SaveCurrentAngles();
         }
+
+
     }
 
     public void ToggleHeatmap()
