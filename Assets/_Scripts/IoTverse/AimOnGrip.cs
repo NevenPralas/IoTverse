@@ -216,8 +216,8 @@ public class AimOnGrip : MonoBehaviour
 
         Vector2 uv = hit.textureCoord;
 
-        HeatMapStatic hm = hit.collider.GetComponent<HeatMapStatic>();
-        if (hm == null) hm = hit.collider.GetComponentInParent<HeatMapStatic>();
+        HeatMapStaticWithJson hm = hit.collider.GetComponent<HeatMapStaticWithJson>();
+        if (hm == null) hm = hit.collider.GetComponentInParent<HeatMapStaticWithJson>();
 
         if (hm == null)
         {

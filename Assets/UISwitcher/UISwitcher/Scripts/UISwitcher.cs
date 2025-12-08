@@ -5,7 +5,7 @@ namespace UISwitcher
 {
     public class UISwitcher : UINullableToggle
     {
-        private HeatMapStatic heatmap;
+        private HeatMapStaticWithJson heatmap;
 
         private readonly Vector2 _min = new(0, 0.5f);
         private readonly Vector2 _max = new(1, 0.5f);
@@ -22,7 +22,7 @@ namespace UISwitcher
         protected override void Start()
         {
             base.Start();
-            heatmap = FindObjectOfType<HeatMapStatic>();
+            heatmap = FindObjectOfType<HeatMapStaticWithJson>();
 
             Aim = GameObject.Find("AimController");
             LaserBeam = GameObject.Find("LaserBeam");

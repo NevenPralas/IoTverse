@@ -15,9 +15,9 @@ public class CreateRoomInit : MonoBehaviour
 
     public void SetEverything()
     {
-        if (floor.GetComponent<HeatMapStatic>().isActiveAndEnabled == false)
+        if (floor.GetComponent<HeatMapStaticWithJson>().isActiveAndEnabled == false)
         {
-            floor.GetComponent<HeatMapStatic>().enabled = true;
+            floor.GetComponent<HeatMapStaticWithJson>().enabled = true;
         }
 
         Invoke(nameof(SetHeatController), 3f);

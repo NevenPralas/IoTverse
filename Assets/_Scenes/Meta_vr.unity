@@ -4943,12 +4943,18 @@ PrefabInstance:
       insertIndex: -1
       addedObject: {fileID: 1755817051}
     m_AddedComponents:
+    - targetCorrespondingSourceObject: {fileID: 6883326225989096039, guid: 9cea98e00cfee5f478a01f61bcb00a59, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 761893734}
     - targetCorrespondingSourceObject: {fileID: 2219855934584165622, guid: 9cea98e00cfee5f478a01f61bcb00a59, type: 3}
       insertIndex: -1
       addedObject: {fileID: 869611520}
     - targetCorrespondingSourceObject: {fileID: 2219855934584165622, guid: 9cea98e00cfee5f478a01f61bcb00a59, type: 3}
       insertIndex: -1
       addedObject: {fileID: 869611521}
+    - targetCorrespondingSourceObject: {fileID: 2219855934584165622, guid: 9cea98e00cfee5f478a01f61bcb00a59, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 869611527}
   m_SourcePrefab: {fileID: 100100000, guid: 9cea98e00cfee5f478a01f61bcb00a59, type: 3}
 --- !u!4 &198405048 stripped
 Transform:
@@ -5060,6 +5066,53 @@ MonoBehaviour:
   _localPositionOffset: {x: 0, y: 0, z: 0}
   _rotationOffset: {x: 0, y: 0, z: 0, w: 1}
   _mirrorOffsetsForLeftHand: 1
+--- !u!1 &206056671
+GameObject:
+  m_ObjectHideFlags: 8
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 206056673}
+  - component: {fileID: 206056672}
+  m_Layer: 0
+  m_Name: Fusion_PhotonBackgroundConnectionHandler
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &206056672
+MonoBehaviour:
+  m_ObjectHideFlags: 8
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 206056671}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: -1222927710, guid: 7de3b8b9e1263ad479e2d0c4261b7646, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  DisconnectAfterKeepAlive: 0
+  KeepAliveInBackground: 60000
+  ApplyDontDestroyOnLoad: 1
+--- !u!4 &206056673
+Transform:
+  m_ObjectHideFlags: 8
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 206056671}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &206611228
 GameObject:
   m_ObjectHideFlags: 0
@@ -17297,6 +17350,23 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 761641047}
   m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!1 &761893733 stripped
+GameObject:
+  m_CorrespondingSourceObject: {fileID: 6883326225989096039, guid: 9cea98e00cfee5f478a01f61bcb00a59, type: 3}
+  m_PrefabInstance: {fileID: 198405047}
+  m_PrefabAsset: {fileID: 0}
+--- !u!114 &761893734
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 761893733}
+  m_Enabled: 0
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 22129596387ac3d488de2ecb0b405278, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!1 &762833247
 GameObject:
   m_ObjectHideFlags: 0
@@ -20675,6 +20745,32 @@ MonoBehaviour:
   enablePulse: 1
   pulseSpeed: 0.8
   pulseIntensity: 0.2
+--- !u!114 &869611527
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 869611513}
+  m_Enabled: 0
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0973115d96c94a04c85f6447f648f11f, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  angle1: 10.5
+  angle2: 15.4
+  angle3: 12.2
+  angle4: 10.8
+  textureResolution: 1024
+  autoUpdate: 1
+  meshSegmentsX: 80
+  meshSegmentsZ: 80
+  minGlobalTemp: 0
+  maxGlobalTemp: 40
+  coldColor: {r: 0, g: 0, b: 1, a: 1}
+  midColor: {r: 1, g: 0.5, b: 0, a: 1}
+  warmColor: {r: 1, g: 0, b: 0, a: 1}
+  heatmapEnabled: 1
 --- !u!1 &870115735
 GameObject:
   m_ObjectHideFlags: 0
@@ -20965,7 +21061,7 @@ MonoBehaviour:
   useRecommendedMSAALevel: 1
   _monoscopic: 0
   _sharpenType: 0
-  enableDynamicResolution: 1
+  enableDynamicResolution: 0
   minDynamicResolutionScale: 0.7
   maxDynamicResolutionScale: 1.3
   minRenderScale: 0.7
@@ -52054,3 +52150,4 @@ SceneRoots:
   - {fileID: 607550878}
   - {fileID: 1720721673}
   - {fileID: 1961537343}
+  - {fileID: 206056673}
