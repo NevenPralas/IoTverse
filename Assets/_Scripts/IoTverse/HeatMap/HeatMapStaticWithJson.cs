@@ -1,5 +1,5 @@
+﻿using System;
 using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Networking;
 using XCharts.Runtime;
@@ -21,7 +21,7 @@ public class HeatMapStaticWithJson : MonoBehaviour
     public int meshSegmentsZ = 80;
 
     [Header("Globalna temperaturna ljestvica (STATIC)")]
-    public float minGlobalTemp = 0f;
+    public float minGlobalTemp = 10f;
     public float maxGlobalTemp = 40f;
 
     [Header("Boje gradienta")]
@@ -29,11 +29,9 @@ public class HeatMapStaticWithJson : MonoBehaviour
     public Color midColor = new Color(1f, 0.5f, 0f);
     public Color warmColor = new Color(1, 0, 0);
 
-    // Toggle
     public bool heatmapEnabled = true;
     private Mesh originalMesh;
     private Material originalMaterial;
-
     private Texture2D heatmapTexture;
     private Material planeMaterial;
     private float previousAngle1, previousAngle2, previousAngle3, previousAngle4;
@@ -42,51 +40,54 @@ public class HeatMapStaticWithJson : MonoBehaviour
     private float planeWidth;
     private float planeDepth;
 
-    string JsonUrl = "https://mocki.io/v1/7cbe89ca-6296-49db-8827-7d9237496c41";
-    MeasurementData data;
-    int currentIndex = 0;
+    [Header("API (FastAPI)")]
+    [SerializeField] private string apiUrl = "http://127.0.0.1:8000/api/measurements";
+    [Tooltip("U bazi su mjerenja spremljena od 14:00:00 do 14:59:59. Ovaj sat se koristi samo kao informacija (mapiramo po mm:ss).")]
+    [SerializeField] private int storedHour = 14;
 
+    private MeasurementData data;
+
+    [Header("XCharts Referenca")]
     public GameObject lineChart;
-    
+
+    // Tracking točke koju korisnik klikne
+    private Vector3 trackedPoint;
+    private bool isTrackingPoint = false;
+
+    // Cache za brži rad
+    private int cachedNowIndex = -1;
+    private float chartUpdateTimer = 0f;
+    private const float ChartUpdatePeriod = 1f; // svake sekunde
 
     void Start()
     {
-
-        //IGRA s chartom - pocetak
-        LineChart chart = lineChart.GetComponent<LineChart>();
-        Serie serie0 = chart.series[0];
-
-        Debug.Log("serie count: " + serie0.dataCount);
-
-        for (int i = 0; i < serie0.dataCount; i++)
+        // Očisti inicijalne fejk podatke na chartu + postavi Y os fiksno 10..40 + title s datumom
+        if (lineChart != null)
         {
-            SerieData item = serie0.data[i];
-
-            // Y vrijednost data tocke
-            float value = (float)item.data[1]; // 0 = X, 1 = Y
-
-            Debug.Log("Data index " + i + " = " + value);
+            LineChart chart = lineChart.GetComponent<LineChart>();
+            if (chart != null)
+            {
+                chart.ClearData();
+                ForceYAxis10to40(chart);
+                UpdateChartTitleWithDate(chart);
+                chart.RefreshChart();
+            }
         }
-        // IGRA s chartom - kraj
-
 
         originalMesh = GetComponent<MeshFilter>().mesh;
         originalMaterial = GetComponent<Renderer>().material;
-
         planeWidth = originalMesh.bounds.size.x;
         planeDepth = originalMesh.bounds.size.z;
 
         ActivateHeatmap();
         SaveCurrentAngles();
 
-        StartCoroutine(FetchJson());
-
+        StartCoroutine(FetchMeasurementsFromApi());
     }
 
     void Update()
     {
-        if (!heatmapEnabled)
-            return;
+        if (!heatmapEnabled) return;
 
         if (autoUpdate && HasValuesChanged())
         {
@@ -94,21 +95,261 @@ public class HeatMapStaticWithJson : MonoBehaviour
             SaveCurrentAngles();
         }
 
+        if (isTrackingPoint && data != null && data.measurements != null && data.measurements.Length > 0)
+        {
+            chartUpdateTimer += Time.deltaTime;
+            if (chartUpdateTimer >= ChartUpdatePeriod)
+            {
+                chartUpdateTimer = 0f;
+                RefreshChartWindowForNow();
+            }
+        }
+    }
 
+    // --- KLIKNUTO NA POD (poziva AimOnGrip) ---
+    public void UpdateChartForPoint(Vector3 worldPoint)
+    {
+        if (lineChart == null || data == null || data.measurements == null || data.measurements.Length == 0)
+            return;
+
+        trackedPoint = worldPoint;
+        isTrackingPoint = true;
+
+        RefreshChartWindowForNow();
+    }
+
+    // --- API: Fetch svih 3600 mjerenja (jednom), zatim u runtimeu samo biramo indeks ---
+    private IEnumerator FetchMeasurementsFromApi()
+    {
+        using (UnityWebRequest req = UnityWebRequest.Get(apiUrl))
+        {
+            yield return req.SendWebRequest();
+
+            if (req.result != UnityWebRequest.Result.Success)
+            {
+                Debug.LogError($"[HeatMap] API error: {req.error} ({apiUrl})");
+                yield break;
+            }
+
+            string json = req.downloadHandler.text;
+            data = JsonUtility.FromJson<MeasurementData>(json);
+
+            if (data == null || data.measurements == null || data.measurements.Length == 0)
+            {
+                Debug.LogError("[HeatMap] API vratio prazne podatke ili JSON nije u očekivanom formatu.");
+                yield break;
+            }
+
+            Debug.Log($"[HeatMap] Učitano mjerenja: {data.measurements.Length}");
+
+            // Postavi heatmap odmah na "sada"
+            ApplyCornerTempsForNowIndex(GetNowMappedIndex());
+        }
+    }
+
+    // --- MAPIRANJE "sada" -> index 0..3599 (po mm:ss) ---
+    private int GetNowMappedIndex()
+    {
+        DateTime now = DateTime.Now;
+        int secondsFromHourStart = (now.Minute * 60) + now.Second;
+
+        int maxIndex = data != null && data.measurements != null ? data.measurements.Length - 1 : 3599;
+        secondsFromHourStart = Mathf.Clamp(secondsFromHourStart, 0, maxIndex);
+
+        return secondsFromHourStart;
+    }
+
+    // --- Primijeni kutne temperature (angle1..4) iz mjerenja za dani index ---
+    private void ApplyCornerTempsForNowIndex(int idx)
+    {
+        if (data == null || data.measurements == null || data.measurements.Length == 0) return;
+        idx = Mathf.Clamp(idx, 0, data.measurements.Length - 1);
+
+        Measurement m = data.measurements[idx];
+        angle1 = m.temperature1;
+        angle2 = m.temperature2;
+        angle3 = m.temperature3;
+        angle4 = m.temperature4;
+    }
+
+    // --- Refreš 30-točkasti prozor za "sada" (29 prije + sada) ---
+    // NE DIRAMO logiku labela.
+    private void RefreshChartWindowForNow()
+    {
+        if (lineChart == null || data == null || data.measurements == null || data.measurements.Length == 0)
+            return;
+
+        int nowIdx = GetNowMappedIndex();
+
+        if (nowIdx != cachedNowIndex)
+        {
+            cachedNowIndex = nowIdx;
+            ApplyCornerTempsForNowIndex(nowIdx);
+        }
+
+        int endIdx = nowIdx;
+        int startIdx = Mathf.Max(0, endIdx - 29);
+        int pointCount = (endIdx - startIdx) + 1; // 1..30
+        int xCategoryCount = pointCount + 1;      // 31 kad je pointCount 30
+
+        Vector3 local = transform.InverseTransformPoint(trackedPoint);
+        float u = (local.x / (planeWidth * transform.lossyScale.x)) + 0.5f;
+        float v = (local.z / (planeDepth * transform.lossyScale.z)) + 0.5f;
+        u = Mathf.Clamp01(u);
+        v = Mathf.Clamp01(v);
+
+        LineChart chart = lineChart.GetComponent<LineChart>();
+        if (chart == null) return;
+
+        chart.ClearData();
+
+        ForceYAxis10to40(chart);
+        UpdateChartTitleWithDate(chart);
+
+        int lastX = xCategoryCount - 1;
+
+        int L0 = 0;
+        int L1 = Mathf.Clamp(Mathf.RoundToInt(lastX * (6f / 30f)), 0, lastX);
+        int L2 = Mathf.Clamp(Mathf.RoundToInt(lastX * (12f / 30f)), 0, lastX);
+        int L3 = Mathf.Clamp(Mathf.RoundToInt(lastX * (18f / 30f)), 0, lastX);
+        int L4 = Mathf.Clamp(Mathf.RoundToInt(lastX * (24f / 30f)), 0, lastX);
+        int L5 = lastX;
+
+        // 1) X kategorije (31)
+        for (int xi = 0; xi < xCategoryCount; xi++)
+        {
+            bool isLabeled = (xi == L0 || xi == L1 || xi == L2 || xi == L3 || xi == L4 || xi == L5);
+
+            string xLabel;
+            if (isLabeled)
+            {
+                int measurementIndex = (xi >= pointCount) ? endIdx : (startIdx + xi);
+                measurementIndex = Mathf.Clamp(measurementIndex, 0, data.measurements.Length - 1);
+
+                xLabel = FormatTimeHhMmSsUsingCurrentHour(data.measurements[measurementIndex].timestamp);
+            }
+            else
+            {
+                xLabel = new string('\u200B', xi + 1);
+            }
+
+            chart.AddXAxisData(xLabel);
+        }
+
+        // 2) Podaci (30) ostaju na indeksima 0..29
+        for (int i = 0; i < pointCount; i++)
+        {
+            int idx = Mathf.Clamp(startIdx + i, 0, data.measurements.Length - 1);
+            Measurement m = data.measurements[idx];
+
+            float tempAtPoint = BilinearInterpolation(u, v, m.temperature1, m.temperature2, m.temperature3, m.temperature4);
+
+            chart.AddData(0, tempAtPoint);
+
+            if (i == pointCount - 1)
+                UpdateTemperatureText(tempAtPoint);
+        }
+
+        // ✅ OBOJI zadnju točku crveno + ostavi Emphasis state (bez diranja labela)
+        SetLastPointEmphasisAndRed(chart, pointCount - 1);
+
+        var xAxis = chart.EnsureChartComponent<XAxis>();
+        xAxis.type = Axis.AxisType.Category;
+        xAxis.axisLabel.formatter = "{value}";
+        xAxis.interval = 0;
+
+        chart.RefreshChart();
+    }
+
+    // ✅ Emphasis + crvena boja (ItemStyle + Symbol), bez ikakvog diranja X labela
+    private void SetLastPointEmphasisAndRed(LineChart chart, int lastPointIndex)
+    {
+        if (chart == null || chart.series == null || chart.series.Count == 0) return;
+
+        var serie = chart.series[0];
+        if (serie == null || serie.dataCount == 0) return;
+
+        int idx = Mathf.Clamp(lastPointIndex, 0, serie.dataCount - 1);
+
+        // reset state svih točaka na Normal
+        for (int i = 0; i < serie.dataCount; i++)
+            serie.data[i].state = SerieState.Normal;
+
+        // zadnja točka -> Emphasis
+        var last = serie.data[idx];
+        last.state = SerieState.Emphasis;
+
+        // osiguraj komponente i postavi boju
+        // (u tvojoj verziji itemStyle i symbol mogu biti null dok se ne EnsureComponent)
+        var item = last.EnsureComponent<ItemStyle>();
+        item.show = true;
+        item.color = Color.red;
+
+        var sym = last.EnsureComponent<SerieSymbol>();
+        sym.show = true;
+        sym.color = Color.red;
+    }
+
+    private string FormatTimeHhMmSsUsingCurrentHour(string isoTimestamp)
+    {
+        if (!DateTime.TryParse(isoTimestamp, out DateTime dtFromDb))
+            return isoTimestamp;
+
+        DateTime now = DateTime.Now;
+
+        DateTime display = new DateTime(
+            now.Year, now.Month, now.Day,
+            now.Hour,
+            dtFromDb.Minute,
+            dtFromDb.Second
+        );
+
+        return display.ToString("HH:mm:ss");
+    }
+
+    private void ForceYAxis10to40(LineChart chart)
+    {
+        var yAxis = chart.EnsureChartComponent<YAxis>();
+        yAxis.minMaxType = Axis.AxisMinMaxType.Custom;
+
+        yAxis.min = 10f;
+        yAxis.max = 40f;
+
+        yAxis.interval = 10f;
+        yAxis.splitNumber = 3;
+
+        yAxis.axisLabel.show = true;
+        yAxis.axisLabel.formatter = "{value}";
+    }
+
+    private void UpdateChartTitleWithDate(LineChart chart)
+    {
+        var title = chart.EnsureChartComponent<Title>();
+        title.text = $"Time Line - {DateTime.Now:dd/MM/yyyy}";
+    }
+
+    public void UpdateTemperatureText(float temperature)
+    {
+        AimOnGrip aimScript = FindObjectOfType<AimOnGrip>();
+        if (aimScript != null)
+            aimScript.UpdateTemperatureDisplay(temperature);
+    }
+
+    public void StopTracking()
+    {
+        isTrackingPoint = false;
+        Debug.Log("[HeatMap] Zaustavljeno praćenje točke");
     }
 
     public void ToggleHeatmap()
     {
-        if (heatmapEnabled)
-            DeactivateHeatmap();
-        else
-            ActivateHeatmap();
+        if (heatmapEnabled) DeactivateHeatmap();
+        else ActivateHeatmap();
     }
 
     private void ActivateHeatmap()
     {
         heatmapEnabled = true;
-
         GenerateMeshFromExistingPlane();
 
         heatmapTexture = new Texture2D(textureResolution, textureResolution);
@@ -124,19 +365,14 @@ public class HeatMapStaticWithJson : MonoBehaviour
             planeMaterial.SetFloat("_Glossiness", 0.2f);
             renderer.material = planeMaterial;
         }
-
         GenerateHeatmap();
     }
 
     private void DeactivateHeatmap()
     {
         heatmapEnabled = false;
-
-        Renderer renderer = GetComponent<Renderer>();
-        renderer.material = originalMaterial;
-
-        MeshFilter mf = GetComponent<MeshFilter>();
-        mf.mesh = originalMesh;
+        GetComponent<Renderer>().material = originalMaterial;
+        GetComponent<MeshFilter>().mesh = originalMesh;
     }
 
     public void GenerateMeshFromExistingPlane()
@@ -149,37 +385,32 @@ public class HeatMapStaticWithJson : MonoBehaviour
 
         int vertCountX = meshSegmentsX + 1;
         int vertCountZ = meshSegmentsZ + 1;
-        int vertCount = vertCountX * vertCountZ;
 
-        Vector3[] vertices = new Vector3[vertCount];
-        Vector2[] uv = new Vector2[vertCount];
-        Color[] colors = new Color[vertCount];
+        Vector3[] vertices = new Vector3[vertCountX * vertCountZ];
+        Vector2[] uv = new Vector2[vertices.Length];
+        Color[] colors = new Color[vertices.Length];
 
         for (int z = 0; z <= meshSegmentsZ; z++)
         {
             for (int x = 0; x <= meshSegmentsX; x++)
             {
                 int i = z * vertCountX + x;
-
                 float u = x / (float)meshSegmentsX;
                 float v = z / (float)meshSegmentsZ;
 
-                float xPos = (u - 0.5f) * planeWidth;
-                float zPos = (v - 0.5f) * planeDepth;
+                vertices[i] = new Vector3(
+                    (u - 0.5f) * planeWidth,
+                    originalMesh.vertices[Mathf.Clamp(i, 0, originalMesh.vertices.Length - 1)].y,
+                    (v - 0.5f) * planeDepth
+                );
 
-                float yPos = originalMesh.vertices[Mathf.Clamp(i, 0, originalMesh.vertices.Length - 1)].y;
-
-                vertices[i] = new Vector3(xPos, yPos, zPos);
                 uv[i] = new Vector2(u, v);
-
-                float temp = BilinearInterpolation(u, v, angle1, angle2, angle3, angle4);
-                colors[i] = GetColorFromTemperature(temp);
+                colors[i] = GetColorFromTemperature(BilinearInterpolation(u, v, angle1, angle2, angle3, angle4));
             }
         }
 
         int[] triangles = new int[meshSegmentsX * meshSegmentsZ * 6];
         int t = 0;
-
         for (int z = 0; z < meshSegmentsZ; z++)
         {
             for (int x = 0; x < meshSegmentsX; x++)
@@ -200,13 +431,12 @@ public class HeatMapStaticWithJson : MonoBehaviour
         mesh.uv = uv;
         mesh.colors = colors;
         mesh.triangles = triangles;
-        mesh.RecalculateNormals();
 
+        mesh.RecalculateNormals();
         meshFilter.mesh = mesh;
 
-        MeshCollider collider = GetComponent<MeshCollider>();
-        if (collider == null) collider = gameObject.AddComponent<MeshCollider>();
-        collider.sharedMesh = mesh;
+        if (GetComponent<MeshCollider>() == null) gameObject.AddComponent<MeshCollider>();
+        GetComponent<MeshCollider>().sharedMesh = mesh;
 
         meshGenerated = true;
     }
@@ -235,71 +465,45 @@ public class HeatMapStaticWithJson : MonoBehaviour
             {
                 float u = x / (float)(textureResolution - 1);
                 float v = y / (float)(textureResolution - 1);
-
-                float temp = BilinearInterpolation(u, v, angle1, angle2, angle3, angle4);
-                heatmapTexture.SetPixel(x, y, GetColorFromTemperature(temp));
+                heatmapTexture.SetPixel(x, y, GetColorFromTemperature(BilinearInterpolation(u, v, angle1, angle2, angle3, angle4)));
             }
         }
-
         heatmapTexture.Apply();
-
-        if (meshGenerated)
-            UpdateVertexColors();
+        if (meshGenerated) UpdateVertexColors();
     }
 
     Color GetColorFromTemperature(float temp)
     {
         float t = Mathf.InverseLerp(minGlobalTemp, maxGlobalTemp, temp);
-
-        if (t < 0.5f)
-            return Color.Lerp(coldColor, midColor, t * 2f);
-        else
-            return Color.Lerp(midColor, warmColor, (t - 0.5f) * 2f);
+        if (t < 0.5f) return Color.Lerp(coldColor, midColor, t * 2f);
+        else return Color.Lerp(midColor, warmColor, (t - 0.5f) * 2f);
     }
 
     void UpdateVertexColors()
     {
-        MeshFilter mf = GetComponent<MeshFilter>();
-        if (mf == null || mf.mesh == null) return;
-
-        Mesh mesh = mf.mesh;
-
+        Mesh mesh = GetComponent<MeshFilter>().mesh;
         Color[] colors = mesh.colors;
         Vector2[] uvs = mesh.uv;
 
         for (int i = 0; i < colors.Length; i++)
         {
-            float t = BilinearInterpolation(uvs[i].x, uvs[i].y, angle1, angle2, angle3, angle4);
-            colors[i] = GetColorFromTemperature(t);
+            colors[i] = GetColorFromTemperature(BilinearInterpolation(uvs[i].x, uvs[i].y, angle1, angle2, angle3, angle4));
         }
-
         mesh.colors = colors;
     }
 
     float BilinearInterpolation(float u, float v, float q11, float q21, float q12, float q22)
     {
-        float bottom = Mathf.Lerp(q11, q21, u);
-        float top = Mathf.Lerp(q12, q22, u);
-        return Mathf.Lerp(bottom, top, v);
+        return Mathf.Lerp(Mathf.Lerp(q11, q21, u), Mathf.Lerp(q12, q22, u), v);
     }
 
-    public void RefreshHeatmap()
-    {
-        GenerateHeatmap();
-    }
+    public void RefreshHeatmap() { GenerateHeatmap(); }
 
     public void SetTemperatures(float t1, float t2, float t3, float t4)
     {
-        angle1 = t1;
-        angle2 = t2;
-        angle3 = t3;
-        angle4 = t4;
+        angle1 = t1; angle2 = t2; angle3 = t3; angle4 = t4;
         GenerateHeatmap();
     }
-
-    // =====================================================
-    //   *** NEW: DOHVAT TEMPERATURE ***
-    // =====================================================
 
     public float GetTemperatureAtUV(Vector2 uv)
     {
@@ -309,67 +513,26 @@ public class HeatMapStaticWithJson : MonoBehaviour
     public float GetTemperatureAtPointWorld(Vector3 worldPoint)
     {
         Vector3 local = transform.InverseTransformPoint(worldPoint);
-
-        float meshWidth = originalMesh.bounds.size.x * transform.lossyScale.x;
-        float meshDepth = originalMesh.bounds.size.z * transform.lossyScale.z;
-
-        if (meshWidth == 0) meshWidth = planeWidth * transform.lossyScale.x;
-        if (meshDepth == 0) meshDepth = planeDepth * transform.lossyScale.z;
-
-        float u = (local.x / meshWidth) + 0.5f;
-        float v = (local.z / meshDepth) + 0.5f;
-
-        u = Mathf.Clamp01(u);
-        v = Mathf.Clamp01(v);
-
-        return GetTemperatureAtUV(new Vector2(u, v));
+        float u = (local.x / (planeWidth * transform.lossyScale.x)) + 0.5f;
+        float v = (local.z / (planeDepth * transform.lossyScale.z)) + 0.5f;
+        return GetTemperatureAtUV(new Vector2(Mathf.Clamp01(u), Mathf.Clamp01(v)));
     }
 
-    IEnumerator FetchJson()
+    // ---------------- JSON MODELI ----------------
+    [Serializable]
+    public class MeasurementData
     {
-        using (UnityWebRequest req = UnityWebRequest.Get(JsonUrl))
-        {
-            yield return req.SendWebRequest();
-
-            if (req.result != UnityWebRequest.Result.Success)
-            {
-                Debug.LogError("Error fetching JSON: " + req.error);
-            }
-            else
-            {
-                string json = req.downloadHandler.text;
-                data = JsonUtility.FromJson<MeasurementData>(json);
-
-                Debug.Log("JSON Loaded! Starting playback...");
-                StartCoroutine(PlayMeasurements());
-            }
-        }
+        public Measurement[] measurements;
     }
 
-    IEnumerator PlayMeasurements()
+    [Serializable]
+    public class Measurement
     {
-        while (currentIndex < data.measurements.Length)
-        {
-            Measurement m = data.measurements[currentIndex];
-
-            angle1 = m.temperature1;
-            angle2 = m.temperature2;
-            angle3 = m.temperature3;
-            angle4 = m.temperature4;
-
-            Debug.Log(
-                "Index: " + currentIndex +
-                " | Timestamp: " + m.timestamp +
-                " | T1: " + m.temperature1 +
-                " | T2: " + m.temperature2 +
-                " | T3: " + m.temperature3 +
-                " | T4: " + m.temperature4
-            );
-
-            currentIndex++;
-            yield return new WaitForSeconds(1f);
-        }
-
-        Debug.Log("Playback finished!");
+        public int id;
+        public string timestamp;
+        public float temperature1;
+        public float temperature2;
+        public float temperature3;
+        public float temperature4;
     }
 }
