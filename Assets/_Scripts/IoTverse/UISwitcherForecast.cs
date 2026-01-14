@@ -6,6 +6,8 @@ namespace UISwitcher
 {
     public class UISwitcherForecast : UINullableToggle
     {
+        private HeatMapStaticWithJson heatmap;
+
         private readonly Vector2 _min = new Vector2(0f, 0.5f);
         private readonly Vector2 _max = new Vector2(1f, 0.5f);
         private readonly Vector2 _middle = new Vector2(0.5f, 0.5f);
@@ -17,7 +19,7 @@ namespace UISwitcher
         [Header("Colors")]
         [SerializeField] private Color onColor = new Color(0.2f, 0.8f, 0.2f, 1f);
         [SerializeField] private Color offColor = new Color(0.8f, 0.2f, 0.2f, 1f);
-        [SerializeField] private Color nullColor = new Color(1f, 1f, 1f, 1f);
+        [SerializeField] private Color nullColor = Color.white;
 
         [Header("Label (TMP)")]
         public TMP_Text modeText;
@@ -25,8 +27,9 @@ namespace UISwitcher
         protected override void Start()
         {
             base.Start();
+            heatmap = FindObjectOfType<HeatMapStaticWithJson>();
 
-            // Neka UI odmah prikaže trenutno stanje (default) iz UINullableToggle
+            // prikaži default stanje
             OnChanged(isOnNullable);
         }
 
@@ -48,6 +51,8 @@ namespace UISwitcher
             SetAnchors(_max);
             if (backgroundGraphic != null) backgroundGraphic.color = onColor;
             if (modeText != null) modeText.text = "Forecast";
+
+            if (heatmap != null) heatmap.SetForecastEnabled(true);
         }
 
         private void SetOff()
@@ -55,6 +60,8 @@ namespace UISwitcher
             SetAnchors(_min);
             if (backgroundGraphic != null) backgroundGraphic.color = offColor;
             if (modeText != null) modeText.text = "Historical Data";
+
+            if (heatmap != null) heatmap.SetForecastEnabled(false);
         }
 
         private void SetNull()
@@ -62,6 +69,8 @@ namespace UISwitcher
             SetAnchors(_middle);
             if (backgroundGraphic != null) backgroundGraphic.color = nullColor;
             if (modeText != null) modeText.text = "Historical Data";
+
+            if (heatmap != null) heatmap.SetForecastEnabled(false);
         }
 
         private void SetAnchors(Vector2 anchor)
@@ -75,7 +84,7 @@ namespace UISwitcher
         // ===================== VR INPUT (META XR) =====================
         void Update()
         {
-            // Y button na Quest kontroleru = OVRInput.Button.Four
+            // Y button na Quest = OVRInput.Button.Four
             if (OVRInput.GetDown(OVRInput.Button.Four))
             {
                 ToggleState();
@@ -85,8 +94,8 @@ namespace UISwitcher
         private void ToggleState()
         {
             bool? v = isOnNullable;
-            isOnNullable = !(v ?? false); // null tretiramo kao false pa prebacimo na true
-            // OnChanged će se pozvati kroz UINullableToggle mehanizam
+            isOnNullable = !(v ?? false); // null -> false -> true
+            // OnChanged će se pozvati kroz UINullableToggle
         }
     }
 }
