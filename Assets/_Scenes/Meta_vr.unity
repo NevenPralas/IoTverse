@@ -5575,7 +5575,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: -179.7, y: -196.4}
+  m_AnchoredPosition: {x: -179.8, y: -196.4}
   m_SizeDelta: {x: 200, y: 50}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &191188425
@@ -24935,6 +24935,11 @@ MonoBehaviour:
   coldColor: {r: 0, g: 0, b: 1, a: 1}
   midColor: {r: 1, g: 0.5, b: 0, a: 1}
   warmColor: {r: 1, g: 0, b: 0, a: 1}
+  labelC: {fileID: 1772695071}
+  labelL1: {fileID: 1911673991}
+  labelL2: {fileID: 191188425}
+  labelR1: {fileID: 1208179121}
+  labelR2: {fileID: 912948282}
   heatmapEnabled: 1
   apiUrl: http://127.0.0.1:8000/api/measurements
   forecastUrl: http://127.0.0.1:8000/api/forecast
@@ -26113,7 +26118,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 197, y: -196.4}
+  m_AnchoredPosition: {x: 193, y: -196.4}
   m_SizeDelta: {x: 200, y: 50}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &912948282
@@ -34928,7 +34933,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 104.4, y: -196.4}
+  m_AnchoredPosition: {x: 99.8, y: -196.4}
   m_SizeDelta: {x: 200, y: 50}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1208179121
@@ -52089,7 +52094,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 8.2, y: -196.4}
+  m_AnchoredPosition: {x: 6.6, y: -196.4}
   m_SizeDelta: {x: 200, y: 50}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1772695071
@@ -57247,7 +57252,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: -82.8, y: -196.4}
+  m_AnchoredPosition: {x: -86.6, y: -196.4}
   m_SizeDelta: {x: 200, y: 50}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1911673991

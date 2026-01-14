@@ -3,6 +3,7 @@ using System.Collections;
 using UnityEngine;
 using UnityEngine.Networking;
 using XCharts.Runtime;
+using TMPro;
 
 public class HeatMapStaticWithJson : MonoBehaviour
 {
@@ -28,6 +29,13 @@ public class HeatMapStaticWithJson : MonoBehaviour
     public Color coldColor = new Color(0, 0, 1);
     public Color midColor = new Color(1f, 0.5f, 0f);
     public Color warmColor = new Color(1, 0, 0);
+
+    [Header("Forecast Time Labels (TMP)")]
+    public TMP_Text labelC;   // current
+    public TMP_Text labelL1;  // between L2 and C
+    public TMP_Text labelL2;  // far left past
+    public TMP_Text labelR1;  // between C and R2
+    public TMP_Text labelR2;  // far right future
 
     public bool heatmapEnabled = true;
     private Mesh originalMesh;
@@ -74,6 +82,9 @@ public class HeatMapStaticWithJson : MonoBehaviour
 
     void Start()
     {
+        // ugasi TMP label komponente po defaultu (ako su dodijeljene)
+        SetForecastTmpLabelsEnabled(false);
+
         if (lineChart != null)
         {
             var chart = lineChart.GetComponent<LineChart>();
@@ -127,6 +138,9 @@ public class HeatMapStaticWithJson : MonoBehaviour
     public void SetForecastEnabled(bool enabled)
     {
         forecastEnabled = enabled;
+
+        // upali/ugasi TMP komponente
+        SetForecastTmpLabelsEnabled(forecastEnabled);
 
         if (forecastEnabled && (forecastData == null || forecastData.measurements == null || forecastData.measurements.Length == 0))
             StartCoroutine(FetchForecastFromApi());
@@ -235,7 +249,6 @@ public class HeatMapStaticWithJson : MonoBehaviour
         var chart = lineChart.GetComponent<LineChart>();
         if (chart == null) return;
 
-        // ✅ ključ stabilnosti: ClearData pa EnsureTwoSeries pa Configure
         chart.ClearData();
         EnsureTwoSeries(chart);
         ConfigureForecastSerie(chart);
@@ -246,6 +259,9 @@ public class HeatMapStaticWithJson : MonoBehaviour
         // ---------------- HISTORICAL OFF ----------------
         if (!forecastEnabled || forecastData == null || forecastData.measurements == null || forecastData.measurements.Length == 0)
         {
+            // ugasi TMP label komponente (sigurno)
+            SetForecastTmpLabelsEnabled(false);
+
             int endIdx = nowIdx;
             int startIdx = Mathf.Max(0, endIdx - 29);
             int pointCount = (endIdx - startIdx) + 1;
@@ -259,7 +275,6 @@ public class HeatMapStaticWithJson : MonoBehaviour
             int L4 = Mathf.Clamp(Mathf.RoundToInt(lastX * (24f / 30f)), 0, lastX);
             int L5 = lastX;
 
-            // X labels
             for (int xi = 0; xi < xCategoryCount; xi++)
             {
                 bool isLabeled = (xi == L0 || xi == L1 || xi == L2 || xi == L3 || xi == L4 || xi == L5);
@@ -276,7 +291,6 @@ public class HeatMapStaticWithJson : MonoBehaviour
                 chart.AddXAxisData(xLabel);
             }
 
-            // Data: serie0 = historijski, serie1 = dummy (ignorable)
             for (int i = 0; i < pointCount; i++)
             {
                 int idx = Mathf.Clamp(startIdx + i, 0, data.measurements.Length - 1);
@@ -285,10 +299,10 @@ public class HeatMapStaticWithJson : MonoBehaviour
 
                 chart.AddData(0, y);
                 chart.AddData(1, 0f);
+
                 if (i == pointCount - 1) UpdateTemperatureText(y);
             }
 
-            // ✅ reset pa ignore (sprečava “nestajanje”)
             ResetSerieData(chart, 0);
             ResetSerieData(chart, 1);
             IgnoreAllPoints(chart, 1);
@@ -304,7 +318,9 @@ public class HeatMapStaticWithJson : MonoBehaviour
             return;
         }
 
-        // ---------------- FORECAST ON (2 serije) ----------------
+        // ---------------- FORECAST ON ----------------
+        SetForecastTmpLabelsEnabled(true);
+
         int histStart = Mathf.Max(0, nowIdx - PastCount);
         int histEnd = nowIdx;
         int histCount = (histEnd - histStart) + 1;
@@ -315,29 +331,10 @@ public class HeatMapStaticWithJson : MonoBehaviour
 
         int combinedCount = histCount + futCount;
 
-        // X labels (61)
+        // ✅ Forecast ON: makni labele s grafa -> sve zero-width
         for (int xi = 0; xi < ForecastAxisCount; xi++)
         {
-            string xLabel;
-            if (!IsForecastLabelSlot(xi))
-            {
-                xLabel = new string('\u200B', xi + 1);
-            }
-            else
-            {
-                if (xi == 30) xLabel = DateTime.Now.ToString("HH:mm:ss");
-                else if (xi == 60)
-                {
-                    int ci = Mathf.Min(combinedCount - 1, 58);
-                    xLabel = GetCombinedTimestampLabel(ci, histStart, histCount, futStart);
-                }
-                else
-                {
-                    int ci = Mathf.Clamp(xi, 0, combinedCount - 1);
-                    xLabel = GetCombinedTimestampLabel(ci, histStart, histCount, futStart);
-                }
-            }
-            chart.AddXAxisData(xLabel);
+            chart.AddXAxisData(new string('\u200B', xi + 1));
         }
 
         // Data 61 u obje serije
@@ -348,29 +345,28 @@ public class HeatMapStaticWithJson : MonoBehaviour
 
             float y = GetCombinedValueAtPoint(u, v, ci, histStart, histCount, futStart);
 
-            chart.AddData(0, y); // historical serie
-            chart.AddData(1, y); // forecast serie
+            chart.AddData(0, y); // historical
+            chart.AddData(1, y); // forecast
         }
 
-        // ✅ resetiraj sve točke prije ignore (sprečava “nestajanje”)
         ResetSerieData(chart, 0);
         ResetSerieData(chart, 1);
 
-        // tekst temperature = NOW (index 29 na seriji 0)
+        // NOW = index 29 u ovom layoutu
         UpdateTemperatureText(GetSerieY(chart, 0, 29));
 
-        // serie0: prikaz 0..29 (past + now)
+        // serie0: past + now (0..29)
         SetIgnoreRange(chart, 0, 30, 60, true);
 
-        // serie1: prikaz 29..58 (now + future), sakrij dummy 59..60, sakrij i past
+        // serie1: now + future (29..58)
         SetIgnoreRange(chart, 1, 0, 28, true);
         SetIgnoreRange(chart, 1, 59, 60, true);
 
-        // crvena točka = now na seriji 0
         SetPointRed(chart, 0, 29);
-
-        // forecast bez kružića
         HideAllSymbols(chart, 1);
+
+        // ✅ postavi naših 5 TMP labela (vrijeme)
+        UpdateForecastTmpTexts(nowIdx);
 
         var xAxisF = chart.EnsureChartComponent<XAxis>();
         xAxisF.type = Axis.AxisType.Category;
@@ -380,7 +376,47 @@ public class HeatMapStaticWithJson : MonoBehaviour
         chart.RefreshChart();
     }
 
-    // ======== KLJUČNO: reset svih SerieData flagova (da se ne zalijepe) ========
+    // ===== TMP label logic =====
+
+    private void SetForecastTmpLabelsEnabled(bool enabled)
+    {
+        if (labelC != null) labelC.enabled = enabled;
+        if (labelL1 != null) labelL1.enabled = enabled;
+        if (labelL2 != null) labelL2.enabled = enabled;
+        if (labelR1 != null) labelR1.enabled = enabled;
+        if (labelR2 != null) labelR2.enabled = enabled;
+    }
+
+    private void UpdateForecastTmpTexts(int nowIdx)
+    {
+        // Indeksi u konceptu:
+        // L2 = now-29s (historical), C = now (historical), R2 = now+29 (forecast)
+        // L1 = mid između L2 i C, R1 = mid između C i R2
+        int idxC = nowIdx;
+        int idxL2 = Mathf.Max(0, nowIdx - 29);
+        int idxL1 = Mathf.Max(0, nowIdx - 15);
+
+        int idxR2 = Mathf.Min(3599, nowIdx + 29);
+        int idxR1 = Mathf.Min(3599, nowIdx + 15);
+
+        // C, L1, L2 iz measurements
+        if (data != null && data.measurements != null && data.measurements.Length > 0)
+        {
+            if (labelC != null) labelC.text = FormatTimeHhMmSsUsingCurrentHour(data.measurements[Mathf.Clamp(idxC, 0, data.measurements.Length - 1)].timestamp);
+            if (labelL2 != null) labelL2.text = FormatTimeHhMmSsUsingCurrentHour(data.measurements[Mathf.Clamp(idxL2, 0, data.measurements.Length - 1)].timestamp);
+            if (labelL1 != null) labelL1.text = FormatTimeHhMmSsUsingCurrentHour(data.measurements[Mathf.Clamp(idxL1, 0, data.measurements.Length - 1)].timestamp);
+        }
+
+        // R1, R2 iz forecast (ako postoji)
+        if (forecastData != null && forecastData.measurements != null && forecastData.measurements.Length > 0)
+        {
+            if (labelR2 != null) labelR2.text = FormatTimeHhMmSsUsingCurrentHour(forecastData.measurements[Mathf.Clamp(idxR2, 0, forecastData.measurements.Length - 1)].timestamp);
+            if (labelR1 != null) labelR1.text = FormatTimeHhMmSsUsingCurrentHour(forecastData.measurements[Mathf.Clamp(idxR1, 0, forecastData.measurements.Length - 1)].timestamp);
+        }
+    }
+
+    // ======== Reset (pooling fix) ========
+
     private void ResetSerieData(LineChart chart, int serieIndex)
     {
         if (chart == null || chart.series == null || chart.series.Count <= serieIndex) return;
@@ -401,8 +437,6 @@ public class HeatMapStaticWithJson : MonoBehaviour
             sym.show = true;
         }
     }
-
-    // ======== Series setup + style ========
 
     private void EnsureTwoSeries(LineChart chart)
     {
@@ -501,28 +535,6 @@ public class HeatMapStaticWithJson : MonoBehaviour
 
     // ======== Forecast mapping ========
 
-    private bool IsForecastLabelSlot(int xi)
-    {
-        for (int i = 0; i < ForecastLabelSlots.Length; i++)
-            if (ForecastLabelSlots[i] == xi) return true;
-        return false;
-    }
-
-    private string GetCombinedTimestampLabel(int combinedIndex, int histStart, int histCount, int futStart)
-    {
-        if (combinedIndex < histCount)
-        {
-            int mIdx = Mathf.Clamp(histStart + combinedIndex, 0, data.measurements.Length - 1);
-            return FormatTimeHhMmSsUsingCurrentHour(data.measurements[mIdx].timestamp);
-        }
-        else
-        {
-            int fOffset = combinedIndex - histCount;
-            int fIdx = Mathf.Clamp(futStart + fOffset, 0, forecastData.measurements.Length - 1);
-            return FormatTimeHhMmSsUsingCurrentHour(forecastData.measurements[fIdx].timestamp);
-        }
-    }
-
     private float GetCombinedValueAtPoint(float u, float v, int combinedIndex, int histStart, int histCount, int futStart)
     {
         if (combinedIndex < histCount)
@@ -570,7 +582,7 @@ public class HeatMapStaticWithJson : MonoBehaviour
         title.text = $"Time Line - {DateTime.Now:dd/MM/yyyy}";
     }
 
-    // ======== AimOnGrip compatibility (NE DIRATI) ========
+    // ======== AimOnGrip compatibility ========
 
     public float GetTemperatureAtUV(Vector2 uv)
     {
@@ -744,10 +756,7 @@ public class HeatMapStaticWithJson : MonoBehaviour
     }
 
     [Serializable]
-    public class MeasurementData
-    {
-        public Measurement[] measurements;
-    }
+    public class MeasurementData { public Measurement[] measurements; }
 
     [Serializable]
     public class Measurement
