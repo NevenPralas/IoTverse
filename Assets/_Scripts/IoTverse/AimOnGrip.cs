@@ -39,13 +39,13 @@ public class AimOnGrip : MonoBehaviour
     public float flashDuration = 1f;
 
     private Vector3 velocity;
-    private Quaternion rotVelocity = Quaternion.identity;
     private bool isVisible = false;
     private bool flashing = false;
 
+    // UI text reference (ostaje)
     public GameObject text;
-    public GameObject canvas;
-    public GameObject portal;
+
+    private SharedAimCanvasState sharedState;
 
     void Start()
     {
@@ -68,10 +68,15 @@ public class AimOnGrip : MonoBehaviour
 
         if (laserLine != null && defaultLaserMaterial == null)
             defaultLaserMaterial = laserLine.material;
+
+        sharedState = FindObjectOfType<SharedAimCanvasState>(true);
     }
 
     void Update()
     {
+        if (sharedState == null)
+            sharedState = FindObjectOfType<SharedAimCanvasState>(true);
+
         float gripValue = OVRInput.Get(OVRInput.Axis1D.SecondaryHandTrigger);
         bool gripHeld = gripValue > 0.12f;
 
@@ -91,11 +96,17 @@ public class AimOnGrip : MonoBehaviour
             }
         }
 
-        // Klik (A) dok držiš grip: flash + logika grafa/temperature
+        // Klik (A) dok držiš grip: flash + NETWORK update shared canvasa
         if (gripHeld && OVRInput.GetDown(OVRInput.Button.One))
         {
             StartCoroutine(FlashMaterials());
-            if (hitEnvironment) LogTemperatureAtHit(hitInfo);
+            if (hitEnvironment)
+            {
+                if (sharedState != null)
+                    sharedState.RequestSetPoint(hitInfo.point);
+                else
+                    Debug.LogError("[AimOnGrip] SharedAimCanvasState nije pronađen (nije spawnan?).");
+            }
         }
 
         bool shouldShow = gripHeld && hitEnvironment;
@@ -146,40 +157,6 @@ public class AimOnGrip : MonoBehaviour
         }
     }
 
-    private void LogTemperatureAtHit(RaycastHit hit)
-    {
-        // Pozicioniraj canvas iznad točke, okreni prema kameri
-        if (canvas != null)
-        {
-            canvas.transform.position = hit.point + Vector3.up * 1.2f;
-            Transform cam = Camera.main != null ? Camera.main.transform : null;
-            if (cam != null)
-            {
-                Vector3 lookDir = cam.position - canvas.transform.position;
-                lookDir.y = 0;
-                canvas.transform.rotation = Quaternion.LookRotation(lookDir);
-                canvas.transform.Rotate(0, 180f, 0);
-            }
-
-            Canvas c = canvas.GetComponent<Canvas>();
-            if (c != null) c.enabled = true;
-        }
-
-        if (portal != null) portal.SetActive(true);
-
-        // Pronađi HeatMap skriptu i reci joj da prikaže graf za tu točku (i da je prati)
-        HeatMapStaticWithJson hm = hit.collider.GetComponentInParent<HeatMapStaticWithJson>();
-        if (hm != null)
-        {
-            hm.UpdateChartForPoint(hit.point);
-
-            // odmah upiši trenutnu temperaturu na toj točki (ako su podaci već učitani)
-            float temp = hm.GetTemperatureAtPointWorld(hit.point);
-            if (text != null)
-                text.GetComponent<TextMeshProUGUI>().text = $"Temperature = {temp:F2}°C";
-        }
-    }
-
     private IEnumerator PulseHaptics(float s, float d)
     {
         OVRInput.SetControllerVibration(1f, s, OVRInput.Controller.RTouch);
@@ -211,7 +188,7 @@ public class AimOnGrip : MonoBehaviour
         flashing = false;
     }
 
-    // Javna metoda koju HeatMapStaticWithJson zove za update teksta temperature
+    // koristi SharedAimCanvasState za update teksta (lokalno)
     public void UpdateTemperatureDisplay(float temperature)
     {
         if (text != null)

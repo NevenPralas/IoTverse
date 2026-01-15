@@ -7,12 +7,15 @@ using UnityEngine;
 
 public class SharedWorldSpawner : MonoBehaviour, INetworkRunnerCallbacks
 {
-    [Header("Marker Prefab (NetworkObject)")]
+    [Header("Prefabs (NetworkObject)")]
     public NetworkObject heatmapMarkerPrefab;
+    public NetworkObject sharedAimCanvasStatePrefab;
 
     private NetworkRunner _boundRunner;
     private bool _callbacksAdded;
-    private NetworkObject _spawned;
+
+    private NetworkObject _spawnedHeatmapMarker;
+    private NetworkObject _spawnedAimState;
 
     private bool _spawnQueued;
 
@@ -59,18 +62,13 @@ public class SharedWorldSpawner : MonoBehaviour, INetworkRunnerCallbacks
         _boundRunner = null;
     }
 
-    private bool MarkerAlreadyExists()
-    {
-        return FindObjectOfType<SharedHeatmapStateMarker>(true) != null;
-    }
+    private bool HeatmapMarkerAlreadyExists() => FindObjectOfType<SharedHeatmapStateMarker>(true) != null;
+    private bool AimStateAlreadyExists() => FindObjectOfType<SharedAimCanvasState>(true) != null;
 
     // --- Callbacks ---
     public void OnPlayerJoined(NetworkRunner runner, PlayerRef player)
     {
         Debug.Log($"[SharedWorldSpawner] OnPlayerJoined | player={player} | Mode={runner.GameMode} | IsServer={runner.IsServer}");
-
-        // U Shared modu OnSceneLoadDone je sigurniji trenutak za Spawn.
-        // Ovdje samo označimo da treba spawnati kad scena bude spremna.
         QueueSpawn(runner);
     }
 
@@ -90,63 +88,48 @@ public class SharedWorldSpawner : MonoBehaviour, INetworkRunnerCallbacks
 
     private IEnumerator SpawnAfterOneFrame(NetworkRunner runner)
     {
-        // Čekaj 1 frame da Simulation bude 100% spremna (fix za GetNextId NRE)
         yield return null;
-
-        TrySpawnMarker(runner);
+        TrySpawnSharedObjects(runner);
         _spawnQueued = false;
     }
 
-    private void TrySpawnMarker(NetworkRunner runner)
+    private void TrySpawnSharedObjects(NetworkRunner runner)
     {
-        if (_spawned != null) return;
-
-        if (MarkerAlreadyExists())
-        {
-            Debug.Log("[SharedWorldSpawner] Marker već postoji u sceni. Ne spawnam duplikat.");
-            return;
-        }
-
-        if (heatmapMarkerPrefab == null)
-        {
-            Debug.LogError("[SharedWorldSpawner] heatmapMarkerPrefab nije postavljen u Inspectoru!");
-            return;
-        }
-
-        // --- Non-shared: server spawna ---
-        if (runner.GameMode != GameMode.Shared)
-        {
-            if (!runner.IsServer)
-            {
-                Debug.Log("[SharedWorldSpawner] Non-shared: nisam server, ne spawnam.");
-                return;
-            }
-
-            _spawned = runner.Spawn(heatmapMarkerPrefab, Vector3.zero, Quaternion.identity, inputAuthority: null);
-
-            var marker = _spawned.GetComponent<SharedHeatmapStateMarker>();
-            if (marker != null) marker.HeatmapOn = true;
-
-            Debug.Log("[SharedWorldSpawner] Spawned marker (Host/Server mode).");
-            return;
-        }
-
-        // --- Shared: samo prvi u sobi spawna ---
+        // Shared mode: samo prvi u sobi spawna (PlayerCount==1)
         int playerCount = 0;
         if (runner.SessionInfo.IsValid)
             playerCount = runner.SessionInfo.PlayerCount;
 
-        if (playerCount != 1)
+        bool shouldSpawn = runner.GameMode != GameMode.Shared ? runner.IsServer : (playerCount == 1);
+        if (!shouldSpawn) return;
+
+        // 1) Heatmap marker
+        if (_spawnedHeatmapMarker == null && !HeatmapMarkerAlreadyExists())
         {
-            Debug.Log($"[SharedWorldSpawner] Shared mode: nisam prvi u sobi (PlayerCount={playerCount}). Ne spawnam.");
-            return;
+            if (heatmapMarkerPrefab == null)
+            {
+                Debug.LogError("[SharedWorldSpawner] heatmapMarkerPrefab nije postavljen!");
+            }
+            else
+            {
+                _spawnedHeatmapMarker = runner.Spawn(heatmapMarkerPrefab, Vector3.zero, Quaternion.identity, inputAuthority: null);
+                Debug.Log("[SharedWorldSpawner] Spawned Heatmap marker.");
+            }
         }
 
-        _spawned = runner.Spawn(heatmapMarkerPrefab, Vector3.zero, Quaternion.identity, inputAuthority: null);
-
-        // U Shared modu state authority odlučuje tko smije pisati networked var.
-        // Marker skripta će u Spawned() postaviti HeatmapOn prema defaultHeatmapOn kad ima authority.
-        Debug.Log("[SharedWorldSpawner] Spawned marker (Shared mode - first player).");
+        // 2) Shared aim/canvas state
+        if (_spawnedAimState == null && !AimStateAlreadyExists())
+        {
+            if (sharedAimCanvasStatePrefab == null)
+            {
+                Debug.LogError("[SharedWorldSpawner] sharedAimCanvasStatePrefab nije postavljen!");
+            }
+            else
+            {
+                _spawnedAimState = runner.Spawn(sharedAimCanvasStatePrefab, Vector3.zero, Quaternion.identity, inputAuthority: null);
+                Debug.Log("[SharedWorldSpawner] Spawned SharedAimCanvasState.");
+            }
+        }
     }
 
     private void OnDestroy()
