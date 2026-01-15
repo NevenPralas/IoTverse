@@ -38,10 +38,12 @@ public class HeatMapStaticWithJson : MonoBehaviour
     public TMP_Text labelR2;  // far right future
 
     public bool heatmapEnabled = true;
+
     private Mesh originalMesh;
     private Material originalMaterial;
     private Texture2D heatmapTexture;
     private Material planeMaterial;
+
     private float previousAngle1, previousAngle2, previousAngle3, previousAngle4;
 
     private bool meshGenerated = false;
@@ -80,8 +82,58 @@ public class HeatMapStaticWithJson : MonoBehaviour
     [SerializeField] private float gapLength = 4f;
     [SerializeField] private float dotLength = 0f;
 
+    // ======== INTERNAL INIT / CACHED COMPONENTS ========
+    private bool _initialized = false;
+    private MeshFilter _mf;
+    private Renderer _r;
+    private MeshCollider _mc;
+
+    private void Awake()
+    {
+        EnsureInitialized();
+    }
+
+    private void EnsureInitialized()
+    {
+        if (_initialized) return;
+
+        _mf = GetComponent<MeshFilter>();
+        _r = GetComponent<Renderer>();
+        _mc = GetComponent<MeshCollider>(); // može biti null
+
+        if (_mf == null)
+        {
+            Debug.LogError("[HeatMap] MeshFilter missing!");
+            return;
+        }
+        if (_r == null)
+        {
+            Debug.LogError("[HeatMap] Renderer missing!");
+            return;
+        }
+
+        // ORIGINAL kao shared (stabilno)
+        originalMesh = _mf.sharedMesh;
+        originalMaterial = _r.sharedMaterial;
+
+        if (originalMesh == null)
+            Debug.LogError("[HeatMap] originalMesh je NULL (MeshFilter.sharedMesh). Provjeri da plane ima mesh!");
+        if (originalMaterial == null)
+            Debug.LogError("[HeatMap] originalMaterial je NULL (Renderer.sharedMaterial).");
+
+        if (originalMesh != null)
+        {
+            planeWidth = originalMesh.bounds.size.x;
+            planeDepth = originalMesh.bounds.size.z;
+        }
+
+        _initialized = true;
+    }
+
     void Start()
     {
+        EnsureInitialized();
+
         // ugasi TMP label komponente po defaultu (ako su dodijeljene)
         SetForecastTmpLabelsEnabled(false);
 
@@ -101,12 +153,9 @@ public class HeatMapStaticWithJson : MonoBehaviour
             }
         }
 
-        originalMesh = GetComponent<MeshFilter>().mesh;
-        originalMaterial = GetComponent<Renderer>().material;
-        planeWidth = originalMesh.bounds.size.x;
-        planeDepth = originalMesh.bounds.size.z;
+        // ✅ KLJUČ: prije Create/Join heatmap je OFF (original mesh/material)
+        DeactivateHeatmap();
 
-        ActivateHeatmap();
         SaveCurrentAngles();
 
         StartCoroutine(FetchMeasurementsFromApi());
@@ -608,12 +657,30 @@ public class HeatMapStaticWithJson : MonoBehaviour
 
     public void ToggleHeatmap()
     {
-        if (heatmapEnabled) DeactivateHeatmap();
-        else ActivateHeatmap();
+        SetHeatmapEnabled(!heatmapEnabled);
+    }
+
+    public void SetHeatmapEnabled(bool enabled)
+    {
+        EnsureInitialized();
+        if (!_initialized) return;
+
+        if (enabled == heatmapEnabled) return;
+
+        if (enabled) ActivateHeatmap();
+        else DeactivateHeatmap();
     }
 
     private void ActivateHeatmap()
     {
+        EnsureInitialized();
+        if (!_initialized) return;
+        if (originalMesh == null || originalMaterial == null)
+        {
+            Debug.LogError("[HeatMap] Ne mogu aktivirati heatmap jer originalMesh/originalMaterial nije validan.");
+            return;
+        }
+
         heatmapEnabled = true;
         GenerateMeshFromExistingPlane();
 
@@ -621,28 +688,43 @@ public class HeatMapStaticWithJson : MonoBehaviour
         heatmapTexture.filterMode = FilterMode.Bilinear;
         heatmapTexture.wrapMode = TextureWrapMode.Clamp;
 
-        Renderer renderer = GetComponent<Renderer>();
-        if (renderer != null)
+        if (_r != null)
         {
             planeMaterial = new Material(Shader.Find("Standard"));
             planeMaterial.mainTexture = heatmapTexture;
             planeMaterial.SetFloat("_Metallic", 0f);
             planeMaterial.SetFloat("_Glossiness", 0.2f);
-            renderer.material = planeMaterial;
+            _r.material = planeMaterial;
         }
+
         GenerateHeatmap();
     }
 
     private void DeactivateHeatmap()
     {
+        EnsureInitialized();
+        if (!_initialized) return;
+
         heatmapEnabled = false;
-        GetComponent<Renderer>().material = originalMaterial;
-        GetComponent<MeshFilter>().mesh = originalMesh;
+
+        if (_r != null && originalMaterial != null)
+            _r.sharedMaterial = originalMaterial;
+
+        if (_mf != null && originalMesh != null)
+            _mf.sharedMesh = originalMesh;
+
+        if (_mc != null && originalMesh != null)
+            _mc.sharedMesh = originalMesh;
+
+        meshGenerated = false;
     }
 
     public void GenerateMeshFromExistingPlane()
     {
-        MeshFilter meshFilter = GetComponent<MeshFilter>();
+        EnsureInitialized();
+        if (!_initialized) return;
+
+        MeshFilter meshFilter = _mf != null ? _mf : GetComponent<MeshFilter>();
         if (meshFilter == null) meshFilter = gameObject.AddComponent<MeshFilter>();
 
         Mesh mesh = new Mesh();
@@ -692,10 +774,11 @@ public class HeatMapStaticWithJson : MonoBehaviour
         mesh.triangles = triangles;
         mesh.RecalculateNormals();
 
-        meshFilter.mesh = mesh;
+        meshFilter.sharedMesh = mesh;
 
-        if (GetComponent<MeshCollider>() == null) gameObject.AddComponent<MeshCollider>();
-        GetComponent<MeshCollider>().sharedMesh = mesh;
+        if (_mc == null) _mc = GetComponent<MeshCollider>();
+        if (_mc == null) _mc = gameObject.AddComponent<MeshCollider>();
+        _mc.sharedMesh = mesh;
 
         meshGenerated = true;
     }
@@ -718,6 +801,8 @@ public class HeatMapStaticWithJson : MonoBehaviour
 
     void GenerateHeatmap()
     {
+        if (heatmapTexture == null) return;
+
         for (int y = 0; y < textureResolution; y++)
         {
             for (int x = 0; x < textureResolution; x++)

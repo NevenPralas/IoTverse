@@ -5994,6 +5994,9 @@ PrefabInstance:
     - targetCorrespondingSourceObject: {fileID: 2219855934584165622, guid: 9cea98e00cfee5f478a01f61bcb00a59, type: 3}
       insertIndex: -1
       addedObject: {fileID: 869611527}
+    - targetCorrespondingSourceObject: {fileID: 2219855934584165622, guid: 9cea98e00cfee5f478a01f61bcb00a59, type: 3}
+      insertIndex: -1
+      addedObject: {fileID: 869611534}
   m_SourcePrefab: {fileID: 100100000, guid: 9cea98e00cfee5f478a01f61bcb00a59, type: 3}
 --- !u!4 &198405048 stripped
 Transform:
@@ -24917,7 +24920,7 @@ MonoBehaviour:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 869611513}
-  m_Enabled: 0
+  m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 0973115d96c94a04c85f6447f648f11f, type: 3}
   m_Name: 
@@ -24948,6 +24951,19 @@ MonoBehaviour:
   dashLength: 6
   gapLength: 4
   dotLength: 0
+--- !u!114 &869611534
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 869611513}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5c44db1d2134ed143b30afd3b1b5689a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  hideHeatmapLocally: 0
 --- !u!1 &870115735
 GameObject:
   m_ObjectHideFlags: 0
@@ -28762,6 +28778,8 @@ GameObject:
   - component: {fileID: 1004885436}
   - component: {fileID: 1004885435}
   - component: {fileID: 1004885434}
+  - component: {fileID: 1004885440}
+  - component: {fileID: 1004885441}
   m_Layer: 0
   m_Name: '[BuildingBlock] Network Manager'
   m_TagString: Untagged
@@ -28910,6 +28928,39 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &1004885440
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1004885433}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6ebca1cbf1ca9ac49915763c4d47e895, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  heatmapMarkerPrefab: {fileID: 7733136120422131407, guid: e1b5a07a35e8407468d641ce20f3b014, type: 3}
+--- !u!114 &1004885441
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1004885433}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 43234c6a5fc56e549b837f72b7faa97a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  watchPrefab: {fileID: 1248574921538046200, guid: e9a0692f5e08e4040a5bb90fdea205e6, type: 3}
+  wristJointName: Joint RightHandWrist
+  localPosition: {x: 0.0049, y: 0.0208, z: 0.0042}
+  localEulerRotation: {x: -165.493, y: 161.189, z: -2.58099}
+  text1: {fileID: 1978591600}
+  text2: {fileID: 1368008427}
+  text3: {fileID: 1633274098}
+  text4: {fileID: 740576014}
 --- !u!1 &1010418099
 GameObject:
   m_ObjectHideFlags: 0
@@ -63035,7 +63086,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5310489526871217910, guid: 55c10431287f8124c905e1daca83b1a1, type: 3}
       propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.size
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 5310489526871217910, guid: 55c10431287f8124c905e1daca83b1a1, type: 3}
       propertyPath: m_OnClick.m_PersistentCalls.m_Calls.Array.data[0].m_Mode
