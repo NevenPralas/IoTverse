@@ -71,7 +71,7 @@ crashlytics-build.properties
 /[Aa]ssets/[Ss]treamingAssets/aa.meta
 /[Aa]ssets/[Ss]treamingAssets/aa/*
 
-# Deep learning
-/DeepLearning/.idea/
-/DeepLearning/.venv/
-/DeepLearning/.env
+# Backend
+/Backend/.idea/
+/Backend/.venv/
+/Backend/.env
