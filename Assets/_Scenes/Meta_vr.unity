@@ -16706,11 +16706,11 @@ RectTransform:
   m_Children: []
   m_Father: {fileID: 1552680051}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 1}
-  m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 2, y: -0}
+  m_AnchorMin: {x: 1, y: 0.5}
+  m_AnchorMax: {x: 1, y: 0.5}
+  m_AnchoredPosition: {x: -2, y: 0}
   m_SizeDelta: {x: 0, y: 0}
-  m_Pivot: {x: 0, y: 1}
+  m_Pivot: {x: 1, y: 0.5}
 --- !u!114 &640622677
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -16738,7 +16738,7 @@ MonoBehaviour:
     m_BestFit: 0
     m_MinSize: 10
     m_MaxSize: 40
-    m_Alignment: 0
+    m_Alignment: 5
     m_AlignByGeometry: 0
     m_RichText: 1
     m_HorizontalOverflow: 1
@@ -23964,11 +23964,11 @@ RectTransform:
   - {fileID: 766774590}
   m_Father: {fileID: 253646112}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 1}
-  m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 290, y: -150}
+  m_AnchorMin: {x: 0.5, y: 0.5}
+  m_AnchorMax: {x: 0.5, y: 0.5}
+  m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 0, y: 0}
-  m_Pivot: {x: 0, y: 1}
+  m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &856520858
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -24941,8 +24941,27 @@ MonoBehaviour:
   labelL2: {fileID: 191188425}
   labelR1: {fileID: 1208179121}
   labelR2: {fileID: 912948282}
+  debugStatus: {fileID: 0}
   heatmapEnabled: 1
-  apiUrl: http://127.0.0.1:8000/api/measurements
+  baseUrl: https://djx.entlab.hr
+  trustedPath: /m2m/trusted/data
+  usr: FER_Departments
+  latestNCount: 30
+  resParamName: res
+  res1: dipProj25_temperature1
+  res2: dipProj25_temperature2
+  res3: dipProj25_temperature3
+  res4: dipProj25_temperature4
+  valueKey: temperature
+  authorization: PREAUTHENTICATED
+  requesterId: digiphy1
+  requesterType: domainApplication
+  accept: application/vnd.ericsson.simple.output+json;version=1.0
+  pollSeconds: 5
+  requestTimeoutSeconds: 15
+  acceptAnyCertificate: 1
+  debugLogs: 1
+  debugBodyMaxChars: 600
   forecastUrl: http://127.0.0.1:8000/api/forecast
   lineChart: {fileID: 1462859900}
   forecastColor: {r: 0.5, g: 0.5, b: 0.5, a: 1}
@@ -28165,7 +28184,7 @@ GameObject:
   - component: {fileID: 983760297}
   - component: {fileID: 983760296}
   m_Layer: 5
-  m_Name: Canvas
+  m_Name: CanvasBezveze
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -42578,7 +42597,7 @@ GameObject:
   - component: {fileID: 1450755456}
   - component: {fileID: 1450755455}
   m_Layer: 0
-  m_Name: Canvas
+  m_Name: CanvasThermo4
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -46812,11 +46831,11 @@ RectTransform:
   - {fileID: 937351814}
   m_Father: {fileID: 253646112}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 1}
-  m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 290, y: -150}
+  m_AnchorMin: {x: 1, y: 0.5}
+  m_AnchorMax: {x: 1, y: 0.5}
+  m_AnchoredPosition: {x: -290, y: 0}
   m_SizeDelta: {x: 0, y: 0}
-  m_Pivot: {x: 0, y: 1}
+  m_Pivot: {x: 1, y: 0.5}
 --- !u!114 &1552680052
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -54190,11 +54209,11 @@ RectTransform:
   m_Children: []
   m_Father: {fileID: 856520857}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 1}
-  m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 2, y: -0}
+  m_AnchorMin: {x: 0.5, y: 0.5}
+  m_AnchorMax: {x: 0.5, y: 0.5}
+  m_AnchoredPosition: {x: 2, y: 0}
   m_SizeDelta: {x: 0, y: 0}
-  m_Pivot: {x: 0, y: 1}
+  m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1820324094
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -54222,7 +54241,7 @@ MonoBehaviour:
     m_BestFit: 0
     m_MinSize: 10
     m_MaxSize: 40
-    m_Alignment: 0
+    m_Alignment: 4
     m_AlignByGeometry: 0
     m_RichText: 1
     m_HorizontalOverflow: 1
@@ -55179,7 +55198,7 @@ GameObject:
   - component: {fileID: 1865122815}
   - component: {fileID: 1865122814}
   m_Layer: 0
-  m_Name: Canvas
+  m_Name: CanvasThermo3
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -58398,7 +58417,7 @@ GameObject:
   - component: {fileID: 1976771671}
   - component: {fileID: 1976771670}
   m_Layer: 0
-  m_Name: Canvas
+  m_Name: CanvasThermo1
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -62020,7 +62039,7 @@ GameObject:
   - component: {fileID: 2126211683}
   - component: {fileID: 2126211682}
   m_Layer: 0
-  m_Name: Canvas
+  m_Name: CanvasThermo2
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -63324,6 +63343,7 @@ Transform:
 SceneRoots:
   m_ObjectHideFlags: 0
   m_Roots:
+  - {fileID: 607550878}
   - {fileID: 1544868953}
   - {fileID: 1576123090}
   - {fileID: 883658910}
@@ -63338,7 +63358,6 @@ SceneRoots:
   - {fileID: 949827179}
   - {fileID: 783459259}
   - {fileID: 1004885439}
-  - {fileID: 607550878}
   - {fileID: 1720721673}
   - {fileID: 1961537343}
   - {fileID: 206056673}
