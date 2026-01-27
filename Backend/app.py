@@ -21,6 +21,12 @@ MODELS_DIR = "models"
 
 SENSOR_IDS = [1, 2, 3, 4]
 
+
+INITIAL_TRAINING_DELAY_SEC = 20
+TRAINING_SCHEDULE_SEC = 120
+REQ_DATA_POINTS = 60
+SEQUENCE_SIZE = 30
+
 # Global model storage for each sensor
 models = {}
 model_lock = threading.Lock()
@@ -92,19 +98,17 @@ def save_model_to_disk(sensor_id):
         model = model_info['model']
         mean = model_info['mean']
         std = model_info['std']
-        prediction_sequence = model_info.get('prediction_sequence')
     
     try:
         # Save model state dict
         model_path = os.path.join(MODELS_DIR, f"model_{sensor_id}.pt")
         torch.save(model.state_dict(), model_path)
         
-        # Save metadata (mean, std, prediction_sequence)
+        # Save metadata (mean, std) - removed prediction_sequence
         metadata_path = os.path.join(MODELS_DIR, f"metadata_{sensor_id}.json")
         metadata = {
             'mean': float(mean),
             'std': float(std),
-            'prediction_sequence': prediction_sequence.tolist() if prediction_sequence is not None else None,
             'saved_at': datetime.datetime.now(datetime.UTC).isoformat()
         }
         with open(metadata_path, 'w') as f:
@@ -139,18 +143,12 @@ def load_model_from_disk(sensor_id):
         model.load_state_dict(torch.load(model_path, weights_only=True))
         model.eval()
         
-        # Restore prediction sequence if available
-        prediction_sequence = None
-        if metadata.get('prediction_sequence') is not None:
-            prediction_sequence = np.array(metadata['prediction_sequence'])
-        
-        # Store in global models dict
+        # Store in global models dict (removed prediction_sequence)
         with model_lock:
             models[sensor_id] = {
                 'model': model,
                 'mean': metadata['mean'],
-                'std': metadata['std'],
-                'prediction_sequence': prediction_sequence
+                'std': metadata['std']
             }
         
         print(f"Model loaded from disk for sensor {sensor_id} (saved at {metadata.get('saved_at', 'unknown')})")
@@ -185,20 +183,19 @@ def train_model(sensor_id):
     """Train or update the model for a specific sensor"""
     print(f"Training model for sensor: {sensor_id}")
     
-    # Get training data
     data = db.get_recent_temperature_data(sensor_id)
     
-    if len(data) < 60:  # Need at least 60 data points
+    if len(data) < REQ_DATA_POINTS:
         print(f"Not enough data for sensor {sensor_id}: {len(data)} points")
         return
     
-    # Prepare sequences
-    seq_length = 30
+    seq_length = SEQUENCE_SIZE
+
     result = prepare_sequences(data, seq_length)
     if result is None:
         print(f"Cannot prepare sequences for sensor {sensor_id}")
         return
-    
+
     X, y, mean, std = result
     
     # Convert to PyTorch tensors
@@ -211,8 +208,7 @@ def train_model(sensor_id):
             models[sensor_id] = {
                 'model': TemperatureLSTM(input_size=1, hidden_size=64, num_layers=2),
                 'mean': mean,
-                'std': std,
-                'prediction_sequence': None  # Store the current sequence for incremental prediction
+                'std': std
             }
         else:
             models[sensor_id]['mean'] = mean
@@ -285,6 +281,7 @@ def initialize_prediction_queue(sensor_id):
     predictions = []
     
     # Predict next 30 seconds (one at a time, using previous predictions)
+    # NOTE: This is only for initial setup - incremental predictions will use real data
     current_sequence = temperatures_norm.copy()
     
     with torch.no_grad():
@@ -301,10 +298,6 @@ def initialize_prediction_queue(sensor_id):
     
     # Denormalize predictions
     predictions_denorm = (np.array(predictions) * std + mean).tolist()
-    
-    # Store the prediction sequence for incremental updates
-    with model_lock:
-        models[sensor_id]['prediction_sequence'] = current_sequence.copy()
 
     # Initialize the queue
     with queue_lock:
@@ -319,7 +312,7 @@ def initialize_prediction_queue(sensor_id):
 
 
 def predict_next_single_value(sensor_id):
-    """Predict only the next single value using the current prediction sequence"""
+    """Predict only the next single value using the data from the database."""
     with model_lock:
         if sensor_id not in models:
             print(f"No model available for sensor {sensor_id}")
@@ -329,24 +322,26 @@ def predict_next_single_value(sensor_id):
         model = model_info['model']
         mean = model_info['mean']
         std = model_info['std']
-        prediction_sequence = model_info.get('prediction_sequence')
-        
-        if prediction_sequence is None:
-            print(f"No prediction sequence available for sensor {sensor_id}")
-            return None
+    
+    # CRITICAL FIX: Get REAL data from database instead of using prediction_sequence
+    data = db.get_recent_temperature_data(sensor_id)
+    
+    if len(data) < 30:
+        print(f"Not enough recent data for prediction: {len(data)} points")
+        return None
+    
+    # Use the last 30 REAL temperature readings
+    temperatures = np.array([d[0] for d in data[-30:]])
+    temperatures_norm = (temperatures - mean) / std
     
     model.eval()
     
     with torch.no_grad():
-        # Use the last 30 values from the prediction sequence
-        X = torch.FloatTensor(prediction_sequence[-30:]).unsqueeze(0).unsqueeze(-1)
+        # Use the last 30 REAL values from the database
+        X = torch.FloatTensor(temperatures_norm[-30:]).unsqueeze(0).unsqueeze(-1)
         
         # Predict next value
         pred_norm = model(X).item()
-        
-        # Update the prediction sequence
-        with model_lock:
-            models[sensor_id]['prediction_sequence'] = np.append(prediction_sequence, pred_norm)
         
         # Denormalize
         pred_denorm = pred_norm * std + mean
@@ -406,7 +401,8 @@ def send_predictions_to_datajedi(sensor_id, predictions, send_all=False):
     # Send predictions
     for i, temp in predictions_to_send:
         future_time = current_time + datetime.timedelta(seconds=i+1)
-        
+
+        ## TODO: define proper temperature prediction resource on the platform
         payload = {
             "source": {
                 "operator": os.getenv("OPERATOR_ID"),
@@ -462,7 +458,7 @@ def prediction_loop():
     """Background thread that updates predictions every second"""
     print("Prediction loop started")
     print("Waiting 60 seconds for initial training to complete...")
-    time.sleep(20)  # Wait for initial training
+    time.sleep(20)
     
     print("Prediction loop continuing after wait period...")
     
@@ -498,7 +494,7 @@ def prediction_loop():
                     if not initialize_prediction_queue(sensor_id):
                         continue
                 
-                # Update queue with 1 new prediction
+                # Update queue with 1 new prediction (now using REAL data!)
                 predictions = update_prediction_queue(sensor_id)
                 
                 if predictions and len(predictions) == 30:
