@@ -592,10 +592,8 @@ def receive_noise(sensor_id):
         "Content-Type": "application/vnd.ericsson.m2m.input+json;version=1.0"
     }
 
-    # TODO: Implement correct POST for DataJediX
-    # r = requests.post(DATA_JEDI_URL, json=payload, headers=headers, verify=False)
-    # return jsonify({"status": "ok", "platform_code": r.status_code})
-    return jsonify({"status": "ok"})
+    r = requests.post(DATA_JEDI_URL, json=payload, headers=headers, verify=False)
+    return jsonify({"status": "ok", "platform_code": r.status_code})
 
 
 if __name__ == "__main__":
