@@ -524,13 +524,12 @@ def prediction_loop():
 @app.route("/sensors/temperature/<sensor_id>", methods=["POST"])
 def receive_temperature(sensor_id):
     data = request.get_json()
+    print(f"Received temperature from sensor {sensor_id}: {data}")
     temp_value = data.get("temperature")
 
     if temp_value is None:
         return jsonify({"error": "Missing temperature value"}), 400
 
-    # print(f"Received: {data}")
-    print(f"Received for {sensor_id}: {temp_value}")
 
     timestamp = datetime.datetime.now(datetime.UTC).replace(microsecond=0).isoformat()
     db.save_temperature_reading(sensor_id, temp_value, timestamp)
@@ -558,17 +557,14 @@ def receive_temperature(sensor_id):
         "Content-Type": "application/vnd.ericsson.m2m.input+json;version=1.0"
     }
 
-    # TODO: Implement correct POST for DataJediX
-    # r = requests.post(DATA_JEDI_URL, json=payload, headers=headers, verify=False)
-    # print("Data Jedi response:", r.status_code, r.text)
-    # return jsonify({"status": "ok", "platform_code": r.status_code})
-    return jsonify({"status": "ok"})
+    r = requests.post(DATA_JEDI_URL, json=payload, headers=headers, verify=False)
+    return jsonify({"status": "ok", "platform_code": r.status_code})
 
 
-@app.route("/sensors/noise/<sensor_id>", methods=["POST"])
+@app.route("/sensors/noisedetector/<sensor_id>", methods=["POST"])
 def receive_noise(sensor_id):
     data = request.get_json()
-    print(f"Received data: {data}")
+    print(f"Received noise from {sensor_id}: {data}")
     noise_value = data["noise"]
     
     timestamp = datetime.datetime.now(datetime.UTC).replace(microsecond=0).isoformat()
