@@ -1,6 +1,5 @@
 import sqlite3
 
-
 DB_PATH = "sensors.db"
 
 
@@ -69,7 +68,7 @@ def init_database():
     # Create index for faster queries
     cursor.execute("""
                    CREATE INDEX IF NOT EXISTS idx_temp_sensor_time
-                       ON temperature_readings(sensor_id, timestamp)
+                       ON temperature_readings (sensor_id, timestamp)
                    """)
 
     conn.commit()
@@ -110,7 +109,7 @@ def get_recent_temperature_data(sensor_id, limit=60):
                    FROM temperature_readings
                    WHERE sensor_id = ?
                    ORDER BY timestamp ASC
-                       LIMIT ?
+                   LIMIT ?
                    """, (sensor_id, limit))
 
     data = cursor.fetchall()
@@ -125,4 +124,3 @@ def get_unique_sensor_ids():
     sensor_ids = [row[0] for row in cursor.fetchall()]
     conn.close()
     return sensor_ids
-

@@ -34,8 +34,6 @@ initialized_sensors = set()
 init_lock = threading.Lock()
 
 
-
-
 # ===================== PYTORCH MODEL =====================
 class TemperatureLSTM(nn.Module):
     """LSTM model for temperature time series prediction"""
@@ -51,7 +49,6 @@ class TemperatureLSTM(nn.Module):
     def forward(self, x):
         # x shape: (batch, seq_len, input_size)
         lstm_out, _ = self.lstm(x)
-        # Take the last output
         last_output = lstm_out[:, -1, :]
         prediction = self.fc(last_output)
         return prediction
@@ -274,14 +271,12 @@ def initialize_prediction_queue(sensor_id):
         mean = model_info['mean']
         std = model_info['std']
 
-    # Get recent data
     data = db.get_recent_temperature_data(sensor_id)
 
     if len(data) < 30:
         print(f"Not enough recent data for prediction: {len(data)} points")
         return False
 
-    
     # Use last 30 readings as input
     temperatures = np.array([d[0] for d in data[-30:]])
     temperatures_norm = (temperatures - mean) / std
@@ -310,10 +305,7 @@ def initialize_prediction_queue(sensor_id):
     # Store the prediction sequence for incremental updates
     with model_lock:
         models[sensor_id]['prediction_sequence'] = current_sequence.copy()
-    
-    # REMOVED: Duplicate save_model_to_disk call that was causing the hang
-    # The model was already saved after training, no need to save again here
-    
+
     # Initialize the queue
     with queue_lock:
         prediction_queues[sensor_id] = deque(predictions_denorm, maxlen=30)
@@ -327,10 +319,7 @@ def initialize_prediction_queue(sensor_id):
 
 
 def predict_next_single_value(sensor_id):
-    """Predict only the next single value using the current prediction sequence
-    
-    This is much more efficient than regenerating all 30 predictions
-    """
+    """Predict only the next single value using the current prediction sequence"""
     with model_lock:
         if sensor_id not in models:
             print(f"No model available for sensor {sensor_id}")
@@ -393,14 +382,7 @@ def get_current_predictions(sensor_id):
 
 
 def send_predictions_to_datajedi(sensor_id, predictions, send_all=False):
-    """Send predicted temperature readings to DataJediX
-    
-    Args:
-        sensor_id: The sensor identifier
-        predictions: List of 30 predictions
-        send_all: If True, send all 30 predictions (for initial setup).
-                  If False, only send the last prediction (for incremental updates).
-    """
+    """Send predicted temperature readings to DataJediX"""
     if predictions is None or len(predictions) == 0:
         return
     
@@ -477,14 +459,7 @@ def training_loop():
 
 
 def prediction_loop():
-    """Background thread that updates predictions every second
-    
-    This efficiently updates the rolling window by:
-    1. Removing the oldest prediction from the queue
-    2. Predicting only 1 new value (instead of 30)
-    3. Adding the new prediction to the queue
-    4. Sending all 30 predictions to DataJediX
-    """
+    """Background thread that updates predictions every second"""
     print("Prediction loop started")
     print("Waiting 60 seconds for initial training to complete...")
     time.sleep(20)  # Wait for initial training
@@ -509,10 +484,7 @@ def prediction_loop():
             print(f"Queue already initialized for sensor {sensor_id}")
     
     print("Prediction queues initialized - starting main prediction loop")
-    
-    # Counter for periodic saving of prediction sequences
-    # save_counter = 0
-    
+
     while True:
         try:
             # Update prediction queue for each sensor (only predicts 1 new value!)
@@ -539,19 +511,8 @@ def prediction_loop():
                     
                     # Send predictions: all 30 on first send, only last one afterward
                     send_predictions_to_datajedi(sensor_id, predictions, send_all=is_first_send)
-            
-            # Periodically save prediction sequences to disk (every 60 seconds)
-            # save_counter += 1
-            # if save_counter >= 60:
-            #     print("Saving prediction sequences to disk...")
-            #     with model_lock:
-            #         for sensor_id in models.keys():
-            #             save_model_to_disk(sensor_id)
-            #     save_counter = 0
-            
-            # Wait 1 second before next update
             time.sleep(1)
-            
+
         except Exception as e:
             print(f"Error in prediction loop: {e}")
             import traceback
@@ -642,22 +603,16 @@ def receive_noise(sensor_id):
 
 
 if __name__ == "__main__":
-    # Initialize models directory
     ensure_models_directory()
-    
-    # Initialize database
     db.init_database()
     
-    # Load saved models from disk
     print("Loading saved models from disk...")
     load_all_models_from_disk()
     
-    # Start background threads
     training_thread = threading.Thread(target=training_loop, daemon=True)
     training_thread.start()
     
     prediction_thread = threading.Thread(target=prediction_loop, daemon=True)
     prediction_thread.start()
     
-    # Run Flask app
     app.run(host="0.0.0.0", port=8080, debug=False)
