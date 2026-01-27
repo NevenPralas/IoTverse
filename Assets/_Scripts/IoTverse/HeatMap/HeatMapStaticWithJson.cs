@@ -57,9 +57,9 @@ public class HeatMapStaticWithJson : MonoBehaviour
     private float planeDepth;
 
     // =========================================================
-    // Data Jedi TRUSTED (GET)
+    // Data Jedi TRUSTED (GET) - CURRENT
     // =========================================================
-    [Header("Data Jedi TRUSTED (GET)")]
+    [Header("Data Jedi TRUSTED (GET) - CURRENT")]
     [SerializeField] private string baseUrl = "https://djx.entlab.hr";
     [SerializeField] private string trustedPath = "/m2m/trusted/data";
     [SerializeField] private string usr = "FER_Departments";
@@ -73,6 +73,13 @@ public class HeatMapStaticWithJson : MonoBehaviour
 
     [Tooltip("Key unutar timestamp objekta, kod vas 'temperature'")]
     [SerializeField] private string valueKey = "temperature";
+
+    [Header("Data Jedi TRUSTED (GET) - FORECAST")]
+    [SerializeField] private int latestNCountForecast = 30;
+    [SerializeField] private string resPred1 = "dipProj25_temperature_prediction1";
+    [SerializeField] private string resPred2 = "dipProj25_temperature_prediction2";
+    [SerializeField] private string resPred3 = "dipProj25_temperature_prediction3";
+    [SerializeField] private string resPred4 = "dipProj25_temperature_prediction4";
 
     [Header("Trusted headers")]
     [SerializeField] private string authorization = "PREAUTHENTICATED";
@@ -92,10 +99,11 @@ public class HeatMapStaticWithJson : MonoBehaviour
     [SerializeField] private int debugBodyMaxChars = 600;
 
     // =========================================================
-    // Rolling window (ONO ŠTO TREBAŠ)
+    // Rolling window (SHIFT svaki 1s) - CURRENT + FORECAST
     // =========================================================
     [Header("Rolling Window (shift svaki 1s)")]
-    [SerializeField] private int windowSeconds = 30;             // zadnjih 30 sekundi
+    [SerializeField] private int windowSeconds = 30;              // zadnjih 30 sekundi (past+now)
+    [SerializeField] private int forecastSeconds = 29;            // future horizon u sekundama (R2 = now+29)
     [SerializeField] private int maxCachedSamplesPerSensor = 600; // cache ~10 minuta (ako dolazi ~1/5s)
 
     private float _rollTimer = 0f;
@@ -119,17 +127,25 @@ public class HeatMapStaticWithJson : MonoBehaviour
     private readonly List<TimestampValue> _sensor3Data = new List<TimestampValue>();
     private readonly List<TimestampValue> _sensor4Data = new List<TimestampValue>();
 
-    // zadnje poznate vrijednosti (step-hold)
+    // cache uzoraka za PREDIKCIJE (sorted by timestampUtc asc)
+    private readonly List<TimestampValue> _pred1Data = new List<TimestampValue>();
+    private readonly List<TimestampValue> _pred2Data = new List<TimestampValue>();
+    private readonly List<TimestampValue> _pred3Data = new List<TimestampValue>();
+    private readonly List<TimestampValue> _pred4Data = new List<TimestampValue>();
+
+    // zadnje poznate vrijednosti (step-hold) - current
     private bool _hasLast1, _hasLast2, _hasLast3, _hasLast4;
     private float _last1, _last2, _last3, _last4;
     private DateTime _lastTs1Utc, _lastTs2Utc, _lastTs3Utc, _lastTs4Utc;
 
-    // =========================================================
-    // Forecast (OSTAJE KAKO JE)
-    // =========================================================
-    [Header("Forecast (stari endpoint za testiranje)")]
-    [SerializeField] private string forecastUrl = "http://127.0.0.1:8000/api/forecast";
+    // zadnje poznate vrijednosti (step-hold) - forecast
+    private bool _hasPLast1, _hasPLast2, _hasPLast3, _hasPLast4;
+    private float _pLast1, _pLast2, _pLast3, _pLast4;
+    private DateTime _pLastTs1Utc, _pLastTs2Utc, _pLastTs3Utc, _pLastTs4Utc;
 
+    // =========================================================
+    // DATA MODEL (XCharts i ostale skripte očekuju ovo)
+    // =========================================================
     private MeasurementData data;
     private MeasurementData forecastData;
 
@@ -231,24 +247,24 @@ public class HeatMapStaticWithJson : MonoBehaviour
 
         // inicijalno napravi rolling window da odmah prikazuje "sad"
         RebuildMeasurementDataRolling();
+        RebuildForecastDataRolling();
         ApplyCornerTempsFromNow();
 
         StartCoroutine(PollDataJediLoop());
-        StartCoroutine(FetchForecastFromApi());
     }
 
     void Update()
     {
-        // 1) svaki frame: shift prozor svake 1s (neovisno o pollSeconds)
+        // 1) shift prozora svake 1s (neovisno o pollSeconds)
         _rollTimer += Time.deltaTime;
         if (_rollTimer >= 1f)
         {
             _rollTimer = 0f;
 
             RebuildMeasurementDataRolling();
+            RebuildForecastDataRolling();
             ApplyCornerTempsFromNow();
 
-            // ako pratiš point – refresha se i graf svake sekunde
             if (isTrackingPoint) RefreshChartWindowForNow();
         }
 
@@ -259,7 +275,7 @@ public class HeatMapStaticWithJson : MonoBehaviour
             SaveCurrentAngles();
         }
 
-        // 3) chart update timer (dodatno osiguranje – kao prije)
+        // 3) dodatno osvježenje grafa (kao prije)
         if (isTrackingPoint && data != null && data.measurements != null && data.measurements.Length > 0)
         {
             chartUpdateTimer += Time.deltaTime;
@@ -272,7 +288,30 @@ public class HeatMapStaticWithJson : MonoBehaviour
     }
 
     // =========================================================
-    // Data Jedi polling (4 endpoints)
+    // Forecast toggle
+    // =========================================================
+    public void SetForecastEnabled(bool enabled)
+    {
+        forecastEnabled = enabled;
+
+        // kad je ON, prikazuj TMP labele (naših 5)
+        SetForecastTmpLabelsEnabled(forecastEnabled);
+
+        if (isTrackingPoint) RefreshChartWindowForNow();
+    }
+
+    public void UpdateChartForPoint(Vector3 worldPoint)
+    {
+        if (lineChart == null || data == null || data.measurements == null || data.measurements.Length == 0)
+            return;
+
+        trackedPoint = worldPoint;
+        isTrackingPoint = true;
+        RefreshChartWindowForNow();
+    }
+
+    // =========================================================
+    // Data Jedi polling (CURRENT + FORECAST endpoints)
     // =========================================================
     private IEnumerator PollDataJediLoop()
     {
@@ -285,51 +324,63 @@ public class HeatMapStaticWithJson : MonoBehaviour
 
     private IEnumerator FetchAndApplyLatestSamples()
     {
-        // sekvencijalno (lakše debug)
-        yield return FetchOneRes(res1, 1);
-        yield return FetchOneRes(res2, 2);
-        yield return FetchOneRes(res3, 3);
-        yield return FetchOneRes(res4, 4);
+        // CURRENT
+        yield return FetchOneRes(res1, 1, false);
+        yield return FetchOneRes(res2, 2, false);
+        yield return FetchOneRes(res3, 3, false);
+        yield return FetchOneRes(res4, 4, false);
 
-        // nakon polla samo updateaj "last known" + cache,
-        // a rolling window će se ionako rebuildat na sljedeći 1s tick
+        // FORECAST
+        yield return FetchOneRes(resPred1, 1, true);
+        yield return FetchOneRes(resPred2, 2, true);
+        yield return FetchOneRes(resPred3, 3, true);
+        yield return FetchOneRes(resPred4, 4, true);
+
+        // nakon polla samo updateaj “now” (rolling će se rebuildat na sljedeći 1s tick)
         ApplyCornerTempsFromNow();
 
-        bool any =
+        bool anyCurrent =
             _sensor1Data.Count > 0 ||
             _sensor2Data.Count > 0 ||
             _sensor3Data.Count > 0 ||
             _sensor4Data.Count > 0;
 
-        if (!any)
+        bool anyPred =
+            _pred1Data.Count > 0 ||
+            _pred2Data.Count > 0 ||
+            _pred3Data.Count > 0 ||
+            _pred4Data.Count > 0;
+
+        if (!anyCurrent)
         {
-            SetStatus("[HeatMap] DataJedi poll: NO DATA parsed (bufferi prazni) -> angles ostaju default");
+            SetStatus("[HeatMap] DataJedi poll: NO CURRENT DATA parsed -> angles ostaju default");
         }
         else
         {
             string stale = BuildStaleStatus();
-            SetStatus($"[HeatMap] DataJedi poll OK | A1={angle1:0.0} A2={angle2:0.0} A3={angle3:0.0} A4={angle4:0.0}{stale}");
+            string pred = anyPred ? " | forecast:OK" : " | forecast:EMPTY";
+            SetStatus($"[HeatMap] DataJedi poll OK | A1={angle1:0.0} A2={angle2:0.0} A3={angle3:0.0} A4={angle4:0.0}{stale}{pred}");
         }
     }
 
     private string BuildStaleStatus()
     {
-        // ako su uzorci “stari” u odnosu na now, ispiši koliko sekundi kasne
         DateTime now = DateTime.UtcNow;
         int s1 = _hasLast1 ? (int)Math.Floor((now - _lastTs1Utc).TotalSeconds) : -1;
         int s2 = _hasLast2 ? (int)Math.Floor((now - _lastTs2Utc).TotalSeconds) : -1;
         int s3 = _hasLast3 ? (int)Math.Floor((now - _lastTs3Utc).TotalSeconds) : -1;
         int s4 = _hasLast4 ? (int)Math.Floor((now - _lastTs4Utc).TotalSeconds) : -1;
-
         return $" | age(s): [{s1},{s2},{s3},{s4}]";
     }
 
-    private IEnumerator FetchOneRes(string resValue, int sensorIndex)
+    private IEnumerator FetchOneRes(string resValue, int sensorIndex, bool isForecast)
     {
+        int count = isForecast ? latestNCountForecast : latestNCount;
+
         string url =
             $"{baseUrl}{trustedPath}" +
             $"?usr={UnityWebRequest.EscapeURL(usr)}" +
-            $"&latestNCount={latestNCount}" +
+            $"&latestNCount={count}" +
             $"&{UnityWebRequest.EscapeURL(resParamName)}={UnityWebRequest.EscapeURL(resValue)}";
 
         using (var req = UnityWebRequest.Get(url))
@@ -354,38 +405,50 @@ public class HeatMapStaticWithJson : MonoBehaviour
 
             if (req.result != UnityWebRequest.Result.Success)
             {
-                Debug.LogWarning($"[DataJedi] HTTP FAIL sensor{sensorIndex} res={resValue} code={code} err={req.error}");
+                Debug.LogWarning($"[DataJedi] HTTP FAIL {(isForecast ? "PRED" : "CURR")} sensor{sensorIndex} res={resValue} code={code} err={req.error}");
                 if (!string.IsNullOrEmpty(bodyShort)) Debug.LogWarning(bodyShort);
                 yield break;
             }
 
             if (!TryParseTrustedJson(body, valueKey, out List<TimestampValue> series))
             {
-                Debug.LogWarning($"[DataJedi] PARSE FAIL sensor{sensorIndex} res={resValue} code={code} bodyLen={(body != null ? body.Length : 0)}");
+                Debug.LogWarning($"[DataJedi] PARSE FAIL {(isForecast ? "PRED" : "CURR")} sensor{sensorIndex} res={resValue} code={code} bodyLen={(body != null ? body.Length : 0)}");
                 if (!string.IsNullOrEmpty(bodyShort)) Debug.LogWarning(bodyShort);
                 yield break;
             }
 
-            ApplySeriesToCache(series, sensorIndex);
+            // Ako je forecast i timestampovi nisu “u budućnosti”, remapaj u budućnost (da ne bude flatline)
+            if (isForecast)
+                series = MaybeRemapForecastSeriesToFuture(series);
+
+            ApplySeriesToCache(series, sensorIndex, isForecast);
 
             if (debugLogs)
             {
-                var list = GetSensorList(sensorIndex);
+                var list = GetSensorList(sensorIndex, isForecast);
                 var last = list.Count > 0 ? list[list.Count - 1] : null;
                 string lastLocal = last != null ? last.timestampUtc.ToLocalTime().ToString("HH:mm:ss.fff") : "N/A";
                 float lastVal = last != null ? last.value : 0f;
 
-                Debug.Log($"[DataJedi] OK sensor{sensorIndex} res={resValue} http={code} parsed={series.Count} cache={list.Count} last={lastLocal} val={lastVal:0.0}");
+                Debug.Log($"[DataJedi] OK {(isForecast ? "PRED" : "CURR")} sensor{sensorIndex} res={resValue} http={code} parsed={series.Count} cache={list.Count} last={lastLocal} val={lastVal:0.0}");
             }
         }
     }
 
-    private List<TimestampValue> GetSensorList(int sensorIndex)
+    private List<TimestampValue> GetSensorList(int sensorIndex, bool isForecast)
     {
-        return sensorIndex == 1 ? _sensor1Data :
-               sensorIndex == 2 ? _sensor2Data :
-               sensorIndex == 3 ? _sensor3Data :
-                                  _sensor4Data;
+        if (!isForecast)
+        {
+            return sensorIndex == 1 ? _sensor1Data :
+                   sensorIndex == 2 ? _sensor2Data :
+                   sensorIndex == 3 ? _sensor3Data :
+                                      _sensor4Data;
+        }
+
+        return sensorIndex == 1 ? _pred1Data :
+               sensorIndex == 2 ? _pred2Data :
+               sensorIndex == 3 ? _pred3Data :
+                                  _pred4Data;
     }
 
     // JSON format:
@@ -447,21 +510,64 @@ public class HeatMapStaticWithJson : MonoBehaviour
         return true;
     }
 
+    private List<TimestampValue> MaybeRemapForecastSeriesToFuture(List<TimestampValue> series)
+    {
+        if (series == null || series.Count == 0) return series;
+
+        DateTime nowUtc = DateTime.UtcNow;
+        DateTime maxTs = series[series.Count - 1].timestampUtc;
+
+        // Ako uopće nema future timestampova (svi su <= now), pretpostavi da su to "koraci" pa ih presloži u budućnost.
+        if (maxTs <= nowUtc.AddSeconds(1))
+        {
+            double stepSec = EstimateMedianStepSeconds(series);
+            if (stepSec < 1) stepSec = 5;
+
+            var remapped = new List<TimestampValue>(series.Count);
+            for (int i = 0; i < series.Count; i++)
+            {
+                // i=0 -> now+step, i=1 -> now+2*step...
+                DateTime ts = nowUtc.AddSeconds((i + 1) * stepSec);
+                remapped.Add(new TimestampValue(ts, series[i].value));
+            }
+            remapped.Sort((a, b) => a.timestampUtc.CompareTo(b.timestampUtc));
+            return remapped;
+        }
+
+        return series;
+    }
+
+    private double EstimateMedianStepSeconds(List<TimestampValue> series)
+    {
+        if (series == null || series.Count < 2) return 5;
+
+        var diffs = new List<double>();
+        for (int i = 1; i < series.Count; i++)
+        {
+            double d = (series[i].timestampUtc - series[i - 1].timestampUtc).TotalSeconds;
+            if (d > 0.2 && d < 600) diffs.Add(d);
+        }
+
+        if (diffs.Count == 0) return 5;
+
+        diffs.Sort();
+        int mid = diffs.Count / 2;
+        return diffs.Count % 2 == 1 ? diffs[mid] : (diffs[mid - 1] + diffs[mid]) / 2.0;
+    }
+
     // cache + dedupe + lastKnown update
-    private void ApplySeriesToCache(List<TimestampValue> series, int sensorIndex)
+    private void ApplySeriesToCache(List<TimestampValue> series, int sensorIndex, bool isForecast)
     {
         if (series == null || series.Count == 0) return;
 
-        var targetList = GetSensorList(sensorIndex);
+        var targetList = GetSensorList(sensorIndex, isForecast);
 
-        // brzi dedupe: dodaj samo one koje ne postoje (po timestampu)
-        // (tolerancija ~500ms)
+        // dedupe: dodaj samo one koje ne postoje (po timestampu) – tolerancija ~500ms
         foreach (var tv in series)
         {
             bool exists = false;
             for (int i = targetList.Count - 1; i >= 0; i--)
             {
-                // prekini ranije ako smo već “daleko unazad”
                 if ((tv.timestampUtc - targetList[i].timestampUtc).TotalSeconds > 10)
                     break;
 
@@ -479,33 +585,42 @@ public class HeatMapStaticWithJson : MonoBehaviour
         while (targetList.Count > maxCachedSamplesPerSensor)
             targetList.RemoveAt(0);
 
-        // update lastKnown iz zadnjeg u cacheu
+        // update lastKnown
         if (targetList.Count > 0)
         {
             var last = targetList[targetList.Count - 1];
-            if (sensorIndex == 1) { _hasLast1 = true; _last1 = last.value; _lastTs1Utc = last.timestampUtc; }
-            if (sensorIndex == 2) { _hasLast2 = true; _last2 = last.value; _lastTs2Utc = last.timestampUtc; }
-            if (sensorIndex == 3) { _hasLast3 = true; _last3 = last.value; _lastTs3Utc = last.timestampUtc; }
-            if (sensorIndex == 4) { _hasLast4 = true; _last4 = last.value; _lastTs4Utc = last.timestampUtc; }
+
+            if (!isForecast)
+            {
+                if (sensorIndex == 1) { _hasLast1 = true; _last1 = last.value; _lastTs1Utc = last.timestampUtc; }
+                if (sensorIndex == 2) { _hasLast2 = true; _last2 = last.value; _lastTs2Utc = last.timestampUtc; }
+                if (sensorIndex == 3) { _hasLast3 = true; _last3 = last.value; _lastTs3Utc = last.timestampUtc; }
+                if (sensorIndex == 4) { _hasLast4 = true; _last4 = last.value; _lastTs4Utc = last.timestampUtc; }
+            }
+            else
+            {
+                if (sensorIndex == 1) { _hasPLast1 = true; _pLast1 = last.value; _pLastTs1Utc = last.timestampUtc; }
+                if (sensorIndex == 2) { _hasPLast2 = true; _pLast2 = last.value; _pLastTs2Utc = last.timestampUtc; }
+                if (sensorIndex == 3) { _hasPLast3 = true; _pLast3 = last.value; _pLastTs3Utc = last.timestampUtc; }
+                if (sensorIndex == 4) { _hasPLast4 = true; _pLast4 = last.value; _pLastTs4Utc = last.timestampUtc; }
+            }
         }
     }
 
     // =========================================================
-    // Ključ: Rolling window koji SHIFT-a svake sekunde i prati SAD
+    // Rolling CURRENT: zadnjih windowSeconds sekundi, shift svake sekunde, bazirano na DateTime.UtcNow
     // =========================================================
     private void RebuildMeasurementDataRolling()
     {
         int n = Mathf.Max(2, windowSeconds);
         DateTime nowUtc = DateTime.UtcNow;
 
-        // timestamps: now-(n-1) ... now
-        // vrijednosti: last value <= ts (step-hold)
         data = new MeasurementData();
         data.measurements = new Measurement[n];
 
         for (int i = 0; i < n; i++)
         {
-            DateTime ts = nowUtc.AddSeconds(-(n - 1 - i)); // najstarije -> newest
+            DateTime ts = nowUtc.AddSeconds(-(n - 1 - i)); // oldest -> newest (sad)
             float v1 = FindValueAtOrBefore(_sensor1Data, ts, _hasLast1, _last1);
             float v2 = FindValueAtOrBefore(_sensor2Data, ts, _hasLast2, _last2);
             float v3 = FindValueAtOrBefore(_sensor3Data, ts, _hasLast3, _last3);
@@ -514,7 +629,7 @@ public class HeatMapStaticWithJson : MonoBehaviour
             data.measurements[i] = new Measurement
             {
                 id = i,
-                timestamp = ts.ToString("o"), // ISO UTC (za label formatter)
+                timestamp = ts.ToString("o"), // ISO UTC
                 temperature1 = v1,
                 temperature2 = v2,
                 temperature3 = v3,
@@ -523,12 +638,80 @@ public class HeatMapStaticWithJson : MonoBehaviour
         }
     }
 
+    // =========================================================
+    // Rolling FORECAST: now..now+forecastSeconds (step-hold po pred cacheu)
+    // Napomena: za chart koristimo future sekunde kao zasebnu strukturu (forecastData)
+    // =========================================================
+    private void RebuildForecastDataRolling()
+    {
+        int n = Mathf.Max(2, windowSeconds); // radi kompatibilnosti (koristimo 30 također)
+        int future = Mathf.Max(1, forecastSeconds);
+        int total = n + future; // n (past+now) + future (now+1..now+future)
+
+        DateTime nowUtc = DateTime.UtcNow;
+
+        forecastData = new MeasurementData();
+        forecastData.measurements = new Measurement[total];
+
+        // prvo kopiraj "past+now" iz current data (da indexi 0..n-1 uvijek postoje)
+        // (ako data još nije spremna, napravi “step-hold” i ovdje)
+        for (int i = 0; i < n; i++)
+        {
+            DateTime ts = nowUtc.AddSeconds(-(n - 1 - i));
+            float v1 = FindValueAtOrBefore(_sensor1Data, ts, _hasLast1, _last1);
+            float v2 = FindValueAtOrBefore(_sensor2Data, ts, _hasLast2, _last2);
+            float v3 = FindValueAtOrBefore(_sensor3Data, ts, _hasLast3, _last3);
+            float v4 = FindValueAtOrBefore(_sensor4Data, ts, _hasLast4, _last4);
+
+            forecastData.measurements[i] = new Measurement
+            {
+                id = i,
+                timestamp = ts.ToString("o"),
+                temperature1 = v1,
+                temperature2 = v2,
+                temperature3 = v3,
+                temperature4 = v4
+            };
+        }
+
+        // sad future: now+1..now+future
+        for (int i = 1; i <= future; i++)
+        {
+            DateTime ts = nowUtc.AddSeconds(i);
+
+            // za forecast koristimo pred cache; ako nema, fallback na current last
+            float p1 = FindValueAtOrBefore(_pred1Data, ts, _hasPLast1, _pLast1);
+            float p2 = FindValueAtOrBefore(_pred2Data, ts, _hasPLast2, _pLast2);
+            float p3 = FindValueAtOrBefore(_pred3Data, ts, _hasPLast3, _pLast3);
+            float p4 = FindValueAtOrBefore(_pred4Data, ts, _hasPLast4, _pLast4);
+
+            // ako pred nema ništa, drži current zadnje
+            if (!_hasPLast1 && _hasLast1) p1 = _last1;
+            if (!_hasPLast2 && _hasLast2) p2 = _last2;
+            if (!_hasPLast3 && _hasLast3) p3 = _last3;
+            if (!_hasPLast4 && _hasLast4) p4 = _last4;
+
+            int idx = (n - 1) + i; // odmah nakon "now" točke
+            if (idx < 0 || idx >= forecastData.measurements.Length) continue;
+
+            forecastData.measurements[idx] = new Measurement
+            {
+                id = idx,
+                timestamp = ts.ToString("o"),
+                temperature1 = p1,
+                temperature2 = p2,
+                temperature3 = p3,
+                temperature4 = p4
+            };
+        }
+    }
+
+    // step-hold finder (binary search)
     private float FindValueAtOrBefore(List<TimestampValue> list, DateTime targetTsUtc, bool hasFallback, float fallback)
     {
         if (list == null || list.Count == 0)
             return hasFallback ? fallback : 0f;
 
-        // binary search po timestampu
         int lo = 0;
         int hi = list.Count - 1;
         int best = -1;
@@ -547,16 +730,14 @@ public class HeatMapStaticWithJson : MonoBehaviour
             }
         }
 
-        if (best >= 0)
-            return list[best].value;
+        if (best >= 0) return list[best].value;
 
-        // ako je target stariji od prvog uzorka u cacheu
+        // target stariji od prvog uzorka
         return hasFallback ? fallback : list[0].value;
     }
 
     private void ApplyCornerTempsFromNow()
     {
-        // “sad” = zadnja točka u data.measurements (rolling window)
         if (data == null || data.measurements == null || data.measurements.Length == 0)
             return;
 
@@ -568,60 +749,9 @@ public class HeatMapStaticWithJson : MonoBehaviour
     }
 
     // =========================================================
-    // Forecast (stari endpoint - bez promjena)
-    // =========================================================
-    private IEnumerator FetchForecastFromApi()
-    {
-        if (string.IsNullOrWhiteSpace(forecastUrl))
-            yield break;
-
-        using (UnityWebRequest req = UnityWebRequest.Get(forecastUrl))
-        {
-            yield return req.SendWebRequest();
-
-            if (req.result != UnityWebRequest.Result.Success)
-            {
-                Debug.LogWarning($"[HeatMap] Forecast API error: {req.error} ({forecastUrl})");
-                yield break;
-            }
-
-            forecastData = JsonUtility.FromJson<MeasurementData>(req.downloadHandler.text);
-            if (forecastData == null || forecastData.measurements == null || forecastData.measurements.Length == 0)
-            {
-                Debug.LogWarning("[HeatMap] forecast API vratio prazne podatke ili JSON nije u očekivanom formatu.");
-                yield break;
-            }
-
-            if (forecastEnabled && isTrackingPoint) RefreshChartWindowForNow();
-        }
-    }
-
-    // =========================================================
-    // Forecast toggle (bez promjene)
-    // =========================================================
-    public void SetForecastEnabled(bool enabled)
-    {
-        forecastEnabled = enabled;
-        SetForecastTmpLabelsEnabled(forecastEnabled);
-
-        if (forecastEnabled && (forecastData == null || forecastData.measurements == null || forecastData.measurements.Length == 0))
-            StartCoroutine(FetchForecastFromApi());
-
-        if (isTrackingPoint) RefreshChartWindowForNow();
-    }
-
-    public void UpdateChartForPoint(Vector3 worldPoint)
-    {
-        if (lineChart == null || data == null || data.measurements == null || data.measurements.Length == 0)
-            return;
-
-        trackedPoint = worldPoint;
-        isTrackingPoint = true;
-        RefreshChartWindowForNow();
-    }
-
-    // =========================================================
-    // CHART (glavna promjena: nowIdx = zadnji index rolling window)
+    // CHART
+    // Ključ: u normal modu prikazuje rolling zadnjih 30s (sad je stvarno "sad"),
+    // u forecast modu koristi DataJedi prediction cache za budućih +29s.
     // =========================================================
     private void RefreshChartWindowForNow()
     {
@@ -636,6 +766,7 @@ public class HeatMapStaticWithJson : MonoBehaviour
             ApplyCornerTempsForIndex(nowIdx);
         }
 
+        // UV za kliknutu točku
         Vector3 local = transform.InverseTransformPoint(trackedPoint);
         float u = (local.x / (planeWidth * transform.lossyScale.x)) + 0.5f;
         float v = (local.z / (planeDepth * transform.lossyScale.z)) + 0.5f;
@@ -652,8 +783,8 @@ public class HeatMapStaticWithJson : MonoBehaviour
         ForceYAxis10to40(chart);
         UpdateChartTitleWithDate(chart);
 
-        // ========== HISTORICAL (rolling window) ==========
-        if (!forecastEnabled || forecastData == null || forecastData.measurements == null || forecastData.measurements.Length == 0)
+        // ---------------- HISTORICAL (forecast OFF) ----------------
+        if (!forecastEnabled)
         {
             SetForecastTmpLabelsEnabled(false);
 
@@ -714,46 +845,78 @@ public class HeatMapStaticWithJson : MonoBehaviour
             return;
         }
 
-        // forecast ON dio ostaje isti kao prije (nije ti sad bitan)
+        // ---------------- FORECAST ON ----------------
         SetForecastTmpLabelsEnabled(true);
 
-        int histStart = Mathf.Max(0, nowIdx - PastCount);
-        int histEnd = nowIdx;
-        int histCount = (histEnd - histStart) + 1;
-
-        int futStart = Mathf.Min(forecastData.measurements.Length - 1, nowIdx + 1);
-        int futEnd = Mathf.Min(forecastData.measurements.Length - 1, nowIdx + FutureCount);
-        int futCount = (futEnd >= futStart) ? (futEnd - futStart + 1) : 0;
-
-        int combinedCount = histCount + futCount;
-
+        // Graph X: 61 tickova, a labele na samom grafu skrivamo (zero-width).
         for (int xi = 0; xi < ForecastAxisCount; xi++)
             chart.AddXAxisData(new string('\u200B', xi + 1));
 
+        // za svaki i u 0..60: past+now (0..29) i future (29..58), ostalo ignore
+        DateTime nowUtc = DateTime.UtcNow;
+
         for (int i = 0; i < ForecastAxisCount; i++)
         {
-            int ci = Mathf.Clamp(i, 0, 58);
-            if (combinedCount > 0) ci = Mathf.Clamp(ci, 0, combinedCount - 1);
+            float y;
 
-            float y = GetCombinedValueAtPoint(u, v, ci, histStart, histCount, futStart);
+            if (i <= 29)
+            {
+                // past+now: now- (29-i) sekundi
+                DateTime ts = nowUtc.AddSeconds(-(29 - i));
+                float v1 = FindValueAtOrBefore(_sensor1Data, ts, _hasLast1, _last1);
+                float v2 = FindValueAtOrBefore(_sensor2Data, ts, _hasLast2, _last2);
+                float v3 = FindValueAtOrBefore(_sensor3Data, ts, _hasLast3, _last3);
+                float v4 = FindValueAtOrBefore(_sensor4Data, ts, _hasLast4, _last4);
+                y = BilinearInterpolation(u, v, v1, v2, v3, v4);
+            }
+            else if (i <= 58)
+            {
+                // future: now + (i-29) sekundi (i=29 je “now”, ali ovdje krećemo od 30 -> +1s)
+                int offs = i - 29;
+                DateTime ts = nowUtc.AddSeconds(offs);
 
-            chart.AddData(0, y);
-            chart.AddData(1, y);
+                float p1 = FindValueAtOrBefore(_pred1Data, ts, _hasPLast1, _pLast1);
+                float p2 = FindValueAtOrBefore(_pred2Data, ts, _hasPLast2, _pLast2);
+                float p3 = FindValueAtOrBefore(_pred3Data, ts, _hasPLast3, _pLast3);
+                float p4 = FindValueAtOrBefore(_pred4Data, ts, _hasPLast4, _pLast4);
+
+                // fallback na current ako predikcija nema ništa
+                if (!_hasPLast1 && _hasLast1) p1 = _last1;
+                if (!_hasPLast2 && _hasLast2) p2 = _last2;
+                if (!_hasPLast3 && _hasLast3) p3 = _last3;
+                if (!_hasPLast4 && _hasLast4) p4 = _last4;
+
+                // i=29 bi trebao biti current, ali ovdje i>29 pa je future ok
+                y = BilinearInterpolation(u, v, p1, p2, p3, p4);
+            }
+            else
+            {
+                // 59..60 (ne koristi se)
+                y = 0f;
+            }
+
+            chart.AddData(0, y); // historical
+            chart.AddData(1, y); // forecast
         }
 
         ResetSerieData(chart, 0);
         ResetSerieData(chart, 1);
 
+        // NOW = index 29
         UpdateTemperatureText(GetSerieY(chart, 0, 29));
 
+        // serie0: past + now (0..29)
         SetIgnoreRange(chart, 0, 30, 60, true);
+
+        // serie1: now + future (29..58)
         SetIgnoreRange(chart, 1, 0, 28, true);
         SetIgnoreRange(chart, 1, 59, 60, true);
 
         SetPointRed(chart, 0, 29);
         HideAllSymbols(chart, 1);
 
-        UpdateForecastTmpTexts(nowIdx);
+        // naše TMP vrijeme: striktno sadašnje vrijeme +/- sekunde
+        UpdateForecastTmpTextsFromNow();
 
         var xAxisF = chart.EnsureChartComponent<XAxis>();
         xAxisF.type = Axis.AxisType.Category;
@@ -785,27 +948,22 @@ public class HeatMapStaticWithJson : MonoBehaviour
         if (labelR2 != null) labelR2.enabled = enabled;
     }
 
-    private void UpdateForecastTmpTexts(int nowIdx)
+    // FORECAST TMP: u forecast modu ne čitamo iz JSON timestampova, nego iz “sada” (da uvijek prati real-time)
+    private void UpdateForecastTmpTextsFromNow()
     {
-        int idxC = nowIdx;
-        int idxL2 = Mathf.Max(0, nowIdx - 29);
-        int idxL1 = Mathf.Max(0, nowIdx - 15);
+        DateTime nowLocal = DateTime.Now;
 
-        int idxR2 = Mathf.Min(3599, nowIdx + 29);
-        int idxR1 = Mathf.Min(3599, nowIdx + 15);
+        DateTime tC = nowLocal;
+        DateTime tL2 = nowLocal.AddSeconds(-29);
+        DateTime tL1 = nowLocal.AddSeconds(-15);
+        DateTime tR1 = nowLocal.AddSeconds(+15);
+        DateTime tR2 = nowLocal.AddSeconds(+29);
 
-        if (data != null && data.measurements != null && data.measurements.Length > 0)
-        {
-            if (labelC != null) labelC.text = FormatTimeLabelFromIso(data.measurements[Mathf.Clamp(idxC, 0, data.measurements.Length - 1)].timestamp);
-            if (labelL2 != null) labelL2.text = FormatTimeLabelFromIso(data.measurements[Mathf.Clamp(idxL2, 0, data.measurements.Length - 1)].timestamp);
-            if (labelL1 != null) labelL1.text = FormatTimeLabelFromIso(data.measurements[Mathf.Clamp(idxL1, 0, data.measurements.Length - 1)].timestamp);
-        }
-
-        if (forecastData != null && forecastData.measurements != null && forecastData.measurements.Length > 0)
-        {
-            if (labelR2 != null) labelR2.text = FormatTimeLabelFromIso(forecastData.measurements[Mathf.Clamp(idxR2, 0, forecastData.measurements.Length - 1)].timestamp);
-            if (labelR1 != null) labelR1.text = FormatTimeLabelFromIso(forecastData.measurements[Mathf.Clamp(idxR1, 0, forecastData.measurements.Length - 1)].timestamp);
-        }
+        if (labelC != null) labelC.text = tC.ToString("HH:mm:ss");
+        if (labelL2 != null) labelL2.text = tL2.ToString("HH:mm:ss");
+        if (labelL1 != null) labelL1.text = tL1.ToString("HH:mm:ss");
+        if (labelR1 != null) labelR1.text = tR1.ToString("HH:mm:ss");
+        if (labelR2 != null) labelR2.text = tR2.ToString("HH:mm:ss");
     }
 
     // ======== Serie helpers ========
@@ -923,23 +1081,6 @@ public class HeatMapStaticWithJson : MonoBehaviour
         var serie = chart.series[serieIndex];
         if (serie == null || serie.dataCount <= pointIndex) return 0f;
         return (float)serie.data[pointIndex].data[1];
-    }
-
-    private float GetCombinedValueAtPoint(float u, float v, int combinedIndex, int histStart, int histCount, int futStart)
-    {
-        if (combinedIndex < histCount)
-        {
-            int mIdx = Mathf.Clamp(histStart + combinedIndex, 0, data.measurements.Length - 1);
-            Measurement m = data.measurements[mIdx];
-            return BilinearInterpolation(u, v, m.temperature1, m.temperature2, m.temperature3, m.temperature4);
-        }
-        else
-        {
-            int fOffset = combinedIndex - histCount;
-            int fIdx = Mathf.Clamp(futStart + fOffset, 0, forecastData.measurements.Length - 1);
-            Measurement fm = forecastData.measurements[fIdx];
-            return BilinearInterpolation(u, v, fm.temperature1, fm.temperature2, fm.temperature3, fm.temperature4);
-        }
     }
 
     // ======== Formatting ========
@@ -1209,7 +1350,6 @@ public class HeatMapStaticWithJson : MonoBehaviour
         protected override bool ValidateCertificate(byte[] certificateData) => true;
     }
 
-    // ======== DATA MODEL (XCharts i ostale skripte očekuju ovo) ========
     [Serializable]
     public class MeasurementData { public Measurement[] measurements; }
 
@@ -1225,7 +1365,7 @@ public class HeatMapStaticWithJson : MonoBehaviour
     }
 
     // ===== MiniJSON (embedded) =====
-    // FIX: ParseObject sada ispravno “pojede” zarez nakon svakog paira.
+    // ParseObject “pojede” zarez nakon svakog paira.
     private static class MiniJSON
     {
         public static class Json
