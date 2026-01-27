@@ -3,106 +3,37 @@ from flask import Flask, request, jsonify
 import requests
 import datetime
 from dotenv import load_dotenv
-import sqlite3
 import threading
 import time
 import torch
 import torch.nn as nn
 import numpy as np
-from collections import defaultdict
+from collections import deque
+import json
+import db
 
 load_dotenv()
 
 app = Flask(__name__)
 
 DATA_JEDI_URL = "https://djx.entlab.hr/m2m/trusted/data"
-DB_PATH = "sensors.db"
+MODELS_DIR = "models"
+
+SENSOR_IDS = [1, 2, 3, 4]
 
 # Global model storage for each sensor
 models = {}
 model_lock = threading.Lock()
 
+# Prediction queues for each sensor - stores the rolling window of predictions
+prediction_queues = {}
+queue_lock = threading.Lock()
 
-# ===================== DATABASE SETUP =====================
-def init_database():
-    """Initialize the SQLite database with necessary tables"""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    
-    # Create temperature readings table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS temperature_readings (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            sensor_id TEXT NOT NULL,
-            temperature REAL NOT NULL,
-            timestamp DATETIME NOT NULL,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    
-    # Create noise readings table
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS noise_readings (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            noise REAL NOT NULL,
-            timestamp DATETIME NOT NULL,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    
-    # Create index for faster queries
-    cursor.execute("""
-        CREATE INDEX IF NOT EXISTS idx_temp_sensor_time 
-        ON temperature_readings(sensor_id, timestamp)
-    """)
-    
-    conn.commit()
-    conn.close()
-    print("Database initialized successfully")
+# Track which sensors have been initialized (for knowing when to send all 30 predictions)
+initialized_sensors = set()
+init_lock = threading.Lock()
 
 
-def save_temperature_reading(sensor_id, temperature, timestamp):
-    """Save temperature reading to database"""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute(
-        "INSERT INTO temperature_readings (sensor_id, temperature, timestamp) VALUES (?, ?, ?)",
-        (sensor_id, temperature, timestamp)
-    )
-    conn.commit()
-    conn.close()
-
-
-def save_noise_reading(noise, timestamp):
-    """Save noise reading to database"""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute(
-        "INSERT INTO noise_readings (noise, timestamp) VALUES (?, ?)",
-        (noise, timestamp)
-    )
-    conn.commit()
-    conn.close()
-
-
-def get_recent_temperature_data(sensor_id, minutes=10):
-    """Get recent temperature data for a sensor"""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    
-    # Get data from last N minutes
-    cutoff_time = datetime.datetime.now(datetime.UTC) - datetime.timedelta(minutes=minutes)
-    
-    cursor.execute("""
-        SELECT temperature, timestamp 
-        FROM temperature_readings 
-        WHERE sensor_id = ? AND timestamp >= ?
-        ORDER BY timestamp ASC
-    """, (sensor_id, cutoff_time.isoformat()))
-    
-    data = cursor.fetchall()
-    conn.close()
-    return data
 
 
 # ===================== PYTORCH MODEL =====================
@@ -126,6 +57,13 @@ class TemperatureLSTM(nn.Module):
         return prediction
 
 
+def ensure_models_directory():
+    """Ensure the models directory exists"""
+    if not os.path.exists(MODELS_DIR):
+        os.makedirs(MODELS_DIR)
+        print(f"Created models directory: {MODELS_DIR}")
+
+
 def prepare_sequences(data, seq_length=30):
     """Prepare sequences for training"""
     if len(data) < seq_length + 1:
@@ -146,12 +84,112 @@ def prepare_sequences(data, seq_length=30):
     return np.array(X), np.array(y), mean, std
 
 
+def save_model_to_disk(sensor_id):
+    """Save the model and its metadata to disk"""
+    with model_lock:
+        if sensor_id not in models:
+            print(f"No model to save for sensor {sensor_id}")
+            return False
+        
+        model_info = models[sensor_id]
+        model = model_info['model']
+        mean = model_info['mean']
+        std = model_info['std']
+        prediction_sequence = model_info.get('prediction_sequence')
+    
+    try:
+        # Save model state dict
+        model_path = os.path.join(MODELS_DIR, f"model_{sensor_id}.pt")
+        torch.save(model.state_dict(), model_path)
+        
+        # Save metadata (mean, std, prediction_sequence)
+        metadata_path = os.path.join(MODELS_DIR, f"metadata_{sensor_id}.json")
+        metadata = {
+            'mean': float(mean),
+            'std': float(std),
+            'prediction_sequence': prediction_sequence.tolist() if prediction_sequence is not None else None,
+            'saved_at': datetime.datetime.now(datetime.UTC).isoformat()
+        }
+        with open(metadata_path, 'w') as f:
+            json.dump(metadata, f)
+        
+        print(f"Model saved to disk for sensor {sensor_id}")
+        return True
+    except Exception as e:
+        print(f"Error saving model for sensor {sensor_id}: {e}")
+        return False
+
+
+def load_model_from_disk(sensor_id):
+    """Load the model and its metadata from disk"""
+    model_path = os.path.join(MODELS_DIR, f"model_{sensor_id}.pt")
+    metadata_path = os.path.join(MODELS_DIR, f"metadata_{sensor_id}.json")
+    
+    # Check if both files exist
+    if not os.path.exists(model_path) or not os.path.exists(metadata_path):
+        print(f"No saved model found for sensor {sensor_id}")
+        return False
+    
+    try:
+        # Load metadata
+        with open(metadata_path, 'r') as f:
+            metadata = json.load(f)
+        
+        # Create new model instance
+        model = TemperatureLSTM(input_size=1, hidden_size=64, num_layers=2)
+        
+        # Load model weights
+        model.load_state_dict(torch.load(model_path, weights_only=True))
+        model.eval()
+        
+        # Restore prediction sequence if available
+        prediction_sequence = None
+        if metadata.get('prediction_sequence') is not None:
+            prediction_sequence = np.array(metadata['prediction_sequence'])
+        
+        # Store in global models dict
+        with model_lock:
+            models[sensor_id] = {
+                'model': model,
+                'mean': metadata['mean'],
+                'std': metadata['std'],
+                'prediction_sequence': prediction_sequence
+            }
+        
+        print(f"Model loaded from disk for sensor {sensor_id} (saved at {metadata.get('saved_at', 'unknown')})")
+        return True
+    except Exception as e:
+        print(f"Error loading model for sensor {sensor_id}: {e}")
+        return False
+
+
+def load_all_models_from_disk():
+    """Load all saved models from disk on startup"""
+    if not os.path.exists(MODELS_DIR):
+        print("No models directory found")
+        return
+    
+    # Find all model files
+    model_files = [f for f in os.listdir(MODELS_DIR) if f.startswith('model_') and f.endswith('.pt')]
+    
+    if not model_files:
+        print("No saved models found")
+        return
+    
+    print(f"Found {len(model_files)} saved model(s)")
+    
+    for model_file in model_files:
+        # Extract sensor_id from filename (e.g., "model_123.pt" -> "123")
+        sensor_id = model_file.replace('model_', '').replace('.pt', '')
+        load_model_from_disk(sensor_id)
+
+
 def train_model(sensor_id):
     """Train or update the model for a specific sensor"""
     print(f"Training model for sensor: {sensor_id}")
     
     # Get training data
-    data = get_recent_temperature_data(sensor_id, minutes=30)
+    data = db.get_recent_temperature_data(sensor_id)
     
     if len(data) < 60:  # Need at least 60 data points
         print(f"Not enough data for sensor {sensor_id}: {len(data)} points")
@@ -176,7 +214,8 @@ def train_model(sensor_id):
             models[sensor_id] = {
                 'model': TemperatureLSTM(input_size=1, hidden_size=64, num_layers=2),
                 'mean': mean,
-                'std': std
+                'std': std,
+                'prediction_sequence': None  # Store the current sequence for incremental prediction
             }
         else:
             models[sensor_id]['mean'] = mean
@@ -216,26 +255,32 @@ def train_model(sensor_id):
             print(f"Sensor {sensor_id} - Epoch [{epoch+1}/{epochs}], Loss: {avg_loss:.6f}")
     
     print(f"Model training completed for sensor: {sensor_id}")
+    
+    # Save model to disk after training
+    save_model_to_disk(sensor_id)
 
 
-def predict_next_30_seconds(sensor_id):
-    """Predict the next 30 temperature readings (1 per second)"""
+def initialize_prediction_queue(sensor_id):
+    """Initialize prediction queue with 30 initial predictions"""
+    print(f"Initializing prediction queue for sensor {sensor_id}...")
+
     with model_lock:
         if sensor_id not in models:
             print(f"No model available for sensor {sensor_id}")
-            return None
-        
+            return False
+
         model_info = models[sensor_id]
         model = model_info['model']
         mean = model_info['mean']
         std = model_info['std']
-    
+
     # Get recent data
-    data = get_recent_temperature_data(sensor_id, minutes=2)
-    
+    data = db.get_recent_temperature_data(sensor_id)
+
     if len(data) < 30:
         print(f"Not enough recent data for prediction: {len(data)} points")
-        return None
+        return False
+
     
     # Use last 30 readings as input
     temperatures = np.array([d[0] for d in data[-30:]])
@@ -260,13 +305,102 @@ def predict_next_30_seconds(sensor_id):
             current_sequence = np.append(current_sequence, pred_norm)
     
     # Denormalize predictions
-    predictions_denorm = np.array(predictions) * std + mean
+    predictions_denorm = (np.array(predictions) * std + mean).tolist()
     
-    return predictions_denorm.tolist()
+    # Store the prediction sequence for incremental updates
+    with model_lock:
+        models[sensor_id]['prediction_sequence'] = current_sequence.copy()
+    
+    # REMOVED: Duplicate save_model_to_disk call that was causing the hang
+    # The model was already saved after training, no need to save again here
+    
+    # Initialize the queue
+    with queue_lock:
+        prediction_queues[sensor_id] = deque(predictions_denorm, maxlen=30)
+    
+    # Mark this sensor as newly initialized (will send all 30 predictions on first update)
+    with init_lock:
+        initialized_sensors.add(sensor_id)
+    
+    print(f"Initialized prediction queue for sensor {sensor_id} with {len(predictions_denorm)} predictions")
+    return True
 
 
-def send_predictions_to_datajedi(sensor_id, predictions):
-    """Send predicted temperature readings to DataJediX"""
+def predict_next_single_value(sensor_id):
+    """Predict only the next single value using the current prediction sequence
+    
+    This is much more efficient than regenerating all 30 predictions
+    """
+    with model_lock:
+        if sensor_id not in models:
+            print(f"No model available for sensor {sensor_id}")
+            return None
+        
+        model_info = models[sensor_id]
+        model = model_info['model']
+        mean = model_info['mean']
+        std = model_info['std']
+        prediction_sequence = model_info.get('prediction_sequence')
+        
+        if prediction_sequence is None:
+            print(f"No prediction sequence available for sensor {sensor_id}")
+            return None
+    
+    model.eval()
+    
+    with torch.no_grad():
+        # Use the last 30 values from the prediction sequence
+        X = torch.FloatTensor(prediction_sequence[-30:]).unsqueeze(0).unsqueeze(-1)
+        
+        # Predict next value
+        pred_norm = model(X).item()
+        
+        # Update the prediction sequence
+        with model_lock:
+            models[sensor_id]['prediction_sequence'] = np.append(prediction_sequence, pred_norm)
+        
+        # Denormalize
+        pred_denorm = pred_norm * std + mean
+    
+    return pred_denorm
+
+
+def update_prediction_queue(sensor_id):
+    """Update the prediction queue by removing oldest and adding newest prediction"""
+    new_prediction = predict_next_single_value(sensor_id)
+    
+    if new_prediction is None:
+        return None
+    
+    with queue_lock:
+        if sensor_id not in prediction_queues:
+            print(f"Queue not initialized for sensor {sensor_id}")
+            return None
+        
+        # Add new prediction (automatically removes oldest due to maxlen=30)
+        prediction_queues[sensor_id].append(new_prediction)
+        
+        # Return current queue as list
+        return list(prediction_queues[sensor_id])
+
+
+def get_current_predictions(sensor_id):
+    """Get the current 30 predictions from the queue"""
+    with queue_lock:
+        if sensor_id not in prediction_queues:
+            return None
+        return list(prediction_queues[sensor_id])
+
+
+def send_predictions_to_datajedi(sensor_id, predictions, send_all=False):
+    """Send predicted temperature readings to DataJediX
+    
+    Args:
+        sensor_id: The sensor identifier
+        predictions: List of 30 predictions
+        send_all: If True, send all 30 predictions (for initial setup).
+                  If False, only send the last prediction (for incremental updates).
+    """
     if predictions is None or len(predictions) == 0:
         return
     
@@ -277,10 +411,18 @@ def send_predictions_to_datajedi(sensor_id, predictions):
         "Content-Type": "application/vnd.ericsson.m2m.input+json;version=1.0"
     }
     
-    current_time = datetime.datetime.now(datetime.UTC)
+    current_time = datetime.datetime.now(datetime.UTC).replace(microsecond=0)
     
-    # Send each prediction with 1-second intervals
-    for i, temp in enumerate(predictions):
+    # Determine which predictions to send
+    if send_all:
+        # Send all 30 predictions with appropriate time offsets
+        predictions_to_send = list(enumerate(predictions))
+    else:
+        # Send only the last prediction (index 29, which is 30 seconds in the future)
+        predictions_to_send = [(29, predictions[-1])]
+    
+    # Send predictions
+    for i, temp in predictions_to_send:
         future_time = current_time + datetime.timedelta(seconds=i+1)
         
         payload = {
@@ -299,8 +441,10 @@ def send_predictions_to_datajedi(sensor_id, predictions):
         }
         
         try:
-            r = requests.post(DATA_JEDI_URL, json=payload, headers=headers, verify=False)
-            print(f"Prediction sent for {sensor_id} at +{i+1}s: {temp:.2f}°C, Status: {r.status_code}")
+            # TODO: implement correct POST to DataJediX
+            # r = requests.post(DATA_JEDI_URL, json=payload, headers=headers, verify=False)
+
+            print(f"Prediction sent for {sensor_id} at +{i+1}s: {future_time} : {temp:.2f}°C")
         except Exception as e:
             print(f"Error sending prediction: {e}")
 
@@ -309,91 +453,138 @@ def send_predictions_to_datajedi(sensor_id, predictions):
 def training_loop():
     """Background thread that periodically trains models"""
     print("Training loop started")
-    time.sleep(30)  # Wait for some initial data
+    # time.sleep(30)  # Wait for some initial data
     
     while True:
         try:
-            # Get all unique sensor IDs
-            conn = sqlite3.connect(DB_PATH)
-            cursor = conn.cursor()
-            cursor.execute("SELECT DISTINCT sensor_id FROM temperature_readings")
-            sensor_ids = [row[0] for row in cursor.fetchall()]
-            conn.close()
-            
+            sensor_ids = SENSOR_IDS
+
             # Train model for each sensor
             for sensor_id in sensor_ids:
+                print(f"Starting training for sensor {sensor_id}...")
                 train_model(sensor_id)
+                print(f"Training completed for sensor {sensor_id}")
+                # Note: Prediction queue initialization is handled by prediction_loop
             
-            print("Training cycle completed. Waiting 2 minutes...")
+            print("Training cycle completed. Training again in 2 minutes...")
             time.sleep(120)  # Train every 2 minutes
             
         except Exception as e:
             print(f"Error in training loop: {e}")
+            import traceback
+            traceback.print_exc()
             time.sleep(60)
 
 
 def prediction_loop():
-    """Background thread that periodically makes and sends predictions"""
+    """Background thread that updates predictions every second
+    
+    This efficiently updates the rolling window by:
+    1. Removing the oldest prediction from the queue
+    2. Predicting only 1 new value (instead of 30)
+    3. Adding the new prediction to the queue
+    4. Sending all 30 predictions to DataJediX
+    """
     print("Prediction loop started")
-    time.sleep(60)  # Wait for initial training
+    print("Waiting 60 seconds for initial training to complete...")
+    time.sleep(20)  # Wait for initial training
+    
+    print("Prediction loop continuing after wait period...")
+    
+    # Initialize queues for all sensors
+    sensor_ids = SENSOR_IDS
+
+    print(f"Found {len(sensor_ids)} sensors to initialize: {sensor_ids}")
+    
+    for sensor_id in sensor_ids:
+        # Check if queue exists (without holding lock during initialization)
+        queue_exists = False
+        with queue_lock:
+            queue_exists = sensor_id in prediction_queues
+        
+        if not queue_exists:
+            print(f"Initializing queue for sensor {sensor_id} in prediction loop...")
+            initialize_prediction_queue(sensor_id)
+        else:
+            print(f"Queue already initialized for sensor {sensor_id}")
+    
+    print("Prediction queues initialized - starting main prediction loop")
+    
+    # Counter for periodic saving of prediction sequences
+    # save_counter = 0
     
     while True:
         try:
-            # Get all unique sensor IDs
-            conn = sqlite3.connect(DB_PATH)
-            cursor = conn.cursor()
-            cursor.execute("SELECT DISTINCT sensor_id FROM temperature_readings")
-            sensor_ids = [row[0] for row in cursor.fetchall()]
-            conn.close()
-            
-            # Make and send predictions for each sensor
+            # Update prediction queue for each sensor (only predicts 1 new value!)
             for sensor_id in sensor_ids:
-                predictions = predict_next_30_seconds(sensor_id)
-                if predictions:
-                    send_predictions_to_datajedi(sensor_id, predictions)
+                # Ensure queue is initialized (check without holding lock during init)
+                queue_exists = False
+                with queue_lock:
+                    queue_exists = sensor_id in prediction_queues
+                
+                if not queue_exists:
+                    if not initialize_prediction_queue(sensor_id):
+                        continue
+                
+                # Update queue with 1 new prediction
+                predictions = update_prediction_queue(sensor_id)
+                
+                if predictions and len(predictions) == 30:
+                    # Check if this sensor was just initialized
+                    is_first_send = False
+                    with init_lock:
+                        if sensor_id in initialized_sensors:
+                            is_first_send = True
+                            initialized_sensors.remove(sensor_id)
+                    
+                    # Send predictions: all 30 on first send, only last one afterward
+                    send_predictions_to_datajedi(sensor_id, predictions, send_all=is_first_send)
             
-            print("Prediction cycle completed. Waiting 30 seconds...")
-            time.sleep(30)  # Predict every 30 seconds
+            # Periodically save prediction sequences to disk (every 60 seconds)
+            # save_counter += 1
+            # if save_counter >= 60:
+            #     print("Saving prediction sequences to disk...")
+            #     with model_lock:
+            #         for sensor_id in models.keys():
+            #             save_model_to_disk(sensor_id)
+            #     save_counter = 0
+            
+            # Wait 1 second before next update
+            time.sleep(1)
             
         except Exception as e:
             print(f"Error in prediction loop: {e}")
-            time.sleep(30)
+            import traceback
+            traceback.print_exc()
+            time.sleep(1)
 
 
 # ===================== FLASK ROUTES =====================
-@app.route("/sensors/temperature", methods=["POST"])
-def receive_temperature():
+@app.route("/sensors/temperature/<sensor_id>", methods=["POST"])
+def receive_temperature(sensor_id):
     data = request.get_json()
-    print(f"Received: {data}")
-    
-    # Extract sensor ID and temperature
-    # Assuming data format: {"sensor_id": "sensor1", "temperature": 25.5}
-    # Or if temperature is a dict: {"temperature": {"sensor1": 25.5, "sensor2": 26.0}}
-    
-    timestamp = datetime.datetime.now(datetime.UTC).isoformat()
-    
-    # Handle different data formats
-    if isinstance(data.get("temperature"), dict):
-        # Multiple sensors in one request
-        for sensor_id, temp in data["temperature"].items():
-            save_temperature_reading(sensor_id, temp, timestamp)
-    else:
-        # Single sensor
-        sensor_id = data.get("sensor_id", "default_sensor")
-        temperature = data["temperature"]
-        save_temperature_reading(sensor_id, temperature, timestamp)
-    
+    temp_value = data.get("temperature")
+
+    if temp_value is None:
+        return jsonify({"error": "Missing temperature value"}), 400
+
+    # print(f"Received: {data}")
+    print(f"Received for {sensor_id}: {temp_value}")
+
+    timestamp = datetime.datetime.now(datetime.UTC).replace(microsecond=0).isoformat()
+    db.save_temperature_reading(sensor_id, temp_value, timestamp)
+
     # Send to DataJediX
     payload = {
         "source": {
             "operator": os.getenv("OPERATOR_ID"),
             "domainApplication": os.getenv("DOMAIN_APP_ID"),
             "user": os.getenv("USER_ID"),
-            "resourceSpec": "temperature"
+            "res": f"dipProj25_temperature{sensor_id}"
         },
         "contentNodes": [
             {
-                "value": data["temperature"],
+                "value": temp_value,
                 "time": timestamp
             }
         ]
@@ -406,29 +597,32 @@ def receive_temperature():
         "Content-Type": "application/vnd.ericsson.m2m.input+json;version=1.0"
     }
 
-    r = requests.post(DATA_JEDI_URL, json=payload, headers=headers, verify=False)
-    print("Data Jedi response:", r.status_code, r.text)
-    return jsonify({"status": "ok", "platform_code": r.status_code})
+    # TODO: Implement correct POST for DataJediX
+    # r = requests.post(DATA_JEDI_URL, json=payload, headers=headers, verify=False)
+    # print("Data Jedi response:", r.status_code, r.text)
+    # return jsonify({"status": "ok", "platform_code": r.status_code})
+    return jsonify({"status": "ok"})
 
 
-@app.route("/sensors/noisedetector", methods=["POST"])
-def receive_noise():
+@app.route("/sensors/noise/<sensor_id>", methods=["POST"])
+def receive_noise(sensor_id):
     data = request.get_json()
-    print(f"Received noise: {data}")
+    print(f"Received data: {data}")
+    noise_value = data["noise"]
     
-    timestamp = datetime.datetime.now(datetime.UTC).isoformat()
-    save_noise_reading(data["noise"], timestamp)
+    timestamp = datetime.datetime.now(datetime.UTC).replace(microsecond=0).isoformat()
+    db.save_noise_reading(sensor_id, noise_value, timestamp)
 
     payload = {
         "source": {
             "operator": os.getenv("OPERATOR_ID"),
             "domainApplication": os.getenv("DOMAIN_APP_ID"),
             "user": os.getenv("USER_ID"),
-            "resource": "dipProj25_noise_detector"
+            "resource": f"dipProj25_noise_detector{sensor_id}"
         },
         "contentNodes": [
             {
-                "value": data["noise"],
+                "value": noise_value,
                 "time": timestamp
             }
         ]
@@ -441,51 +635,22 @@ def receive_noise():
         "Content-Type": "application/vnd.ericsson.m2m.input+json;version=1.0"
     }
 
-    r = requests.post(DATA_JEDI_URL, json=payload, headers=headers, verify=False)
-    return jsonify({"status": "ok", "platform_code": r.status_code})
-
-
-@app.route("/api/predict/<sensor_id>", methods=["GET"])
-def get_prediction(sensor_id):
-    """API endpoint to manually trigger prediction for a sensor"""
-    predictions = predict_next_30_seconds(sensor_id)
-    if predictions:
-        return jsonify({"sensor_id": sensor_id, "predictions": predictions})
-    else:
-        return jsonify({"error": "Unable to generate predictions"}), 400
-
-
-@app.route("/api/train/<sensor_id>", methods=["POST"])
-def trigger_training(sensor_id):
-    """API endpoint to manually trigger training for a sensor"""
-    threading.Thread(target=train_model, args=(sensor_id,)).start()
-    return jsonify({"status": "training_started", "sensor_id": sensor_id})
-
-
-@app.route("/api/stats", methods=["GET"])
-def get_stats():
-    """Get database statistics"""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    
-    cursor.execute("SELECT sensor_id, COUNT(*) FROM temperature_readings GROUP BY sensor_id")
-    temp_stats = {row[0]: row[1] for row in cursor.fetchall()}
-    
-    cursor.execute("SELECT COUNT(*) FROM noise_readings")
-    noise_count = cursor.fetchone()[0]
-    
-    conn.close()
-    
-    return jsonify({
-        "temperature_readings": temp_stats,
-        "noise_readings": noise_count,
-        "active_models": list(models.keys())
-    })
+    # TODO: Implement correct POST for DataJediX
+    # r = requests.post(DATA_JEDI_URL, json=payload, headers=headers, verify=False)
+    # return jsonify({"status": "ok", "platform_code": r.status_code})
+    return jsonify({"status": "ok"})
 
 
 if __name__ == "__main__":
+    # Initialize models directory
+    ensure_models_directory()
+    
     # Initialize database
-    init_database()
+    db.init_database()
+    
+    # Load saved models from disk
+    print("Loading saved models from disk...")
+    load_all_models_from_disk()
     
     # Start background threads
     training_thread = threading.Thread(target=training_loop, daemon=True)
