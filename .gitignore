@@ -70,3 +70,10 @@ crashlytics-build.properties
 # Temporary auto-generated Android Assets
 /[Aa]ssets/[Ss]treamingAssets/aa.meta
 /[Aa]ssets/[Ss]treamingAssets/aa/*
+
+
+# VS Code directory
+.vscode/
+
+# Oculus platform Settings so we can have different app ids for dev
+Assets/Resources/OculusPlatformSettings.asset
