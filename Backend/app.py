@@ -62,7 +62,7 @@ def ensure_models_directory():
     """Ensure the models directory exists"""
     if not os.path.exists(MODELS_DIR):
         os.makedirs(MODELS_DIR)
-        print(f"Created models directory: {MODELS_DIR}")
+        print(f"✓ Created models directory: {MODELS_DIR}")
 
 
 def prepare_sequences(data, seq_length=30):
@@ -89,7 +89,7 @@ def save_model_to_disk(sensor_id):
     """Save the model and its metadata to disk"""
     with model_lock:
         if sensor_id not in models:
-            print(f"No model to save for sensor {sensor_id}")
+            print(f"❌ No model to save for sensor {sensor_id}")
             return False
 
         model_info = models[sensor_id]
@@ -110,10 +110,10 @@ def save_model_to_disk(sensor_id):
         with open(metadata_path, 'w') as f:
             json.dump(metadata, f)
 
-        print(f"Model saved to disk for sensor {sensor_id}")
+        print(f"✓ Model saved to disk for sensor {sensor_id}")
         return True
     except Exception as e:
-        print(f"Error saving model for sensor {sensor_id}: {e}")
+        print(f"❌ Error saving model for sensor {sensor_id}: {e}")
         return False
 
 
@@ -123,7 +123,7 @@ def load_model_from_disk(sensor_id):
     metadata_path = os.path.join(MODELS_DIR, f"metadata_{sensor_id}.json")
 
     if not os.path.exists(model_path) or not os.path.exists(metadata_path):
-        print(f"No saved model found for sensor {sensor_id}")
+        print(f"❌ No saved model found for sensor {sensor_id}")
         return False
 
     try:
@@ -142,23 +142,23 @@ def load_model_from_disk(sensor_id):
                 'std': metadata['std']
             }
 
-        print(f"Model loaded from disk for sensor {sensor_id} (saved at {metadata.get('saved_at', 'unknown')})")
+        print(f"✓ Model loaded from disk for sensor {sensor_id} (saved at {metadata.get('saved_at', 'unknown')})")
         return True
     except Exception as e:
-        print(f"Error loading model for sensor {sensor_id}: {e}")
+        print(f"❌ Error loading model for sensor {sensor_id}: {e}")
         return False
 
 
 def load_all_models_from_disk():
     """Load all saved models from disk on startup"""
     if not os.path.exists(MODELS_DIR):
-        print("No models directory found")
+        print("❌ No models directory found")
         return
 
     model_files = [f for f in os.listdir(MODELS_DIR) if f.startswith('model_') and f.endswith('.pt')]
 
     if not model_files:
-        print("No saved models found")
+        print("❌ No saved models found")
         return
 
     print(f"Found {len(model_files)} saved model(s)")
@@ -175,14 +175,14 @@ def train_model(sensor_id):
     data = db.get_recent_temperature_data(sensor_id)
 
     if len(data) < REQ_DATA_POINTS:
-        print(f"Not enough data for sensor {sensor_id}: {len(data)} points")
+        print(f"❌ Not enough data for sensor {sensor_id}: {len(data)} points")
         return
 
     seq_length = SEQUENCE_SIZE
 
     result = prepare_sequences(data, seq_length)
     if result is None:
-        print(f"Cannot prepare sequences for sensor {sensor_id}")
+        print(f"❌ Cannot prepare sequences for sensor {sensor_id}")
         return
 
     X, y, mean, std = result
@@ -232,14 +232,14 @@ def train_model(sensor_id):
             avg_loss = total_loss / num_batches
             print(f"Sensor {sensor_id} - Epoch [{epoch + 1}/{epochs}], Loss: {avg_loss:.6f}")
 
-    print(f"Model training completed for sensor: {sensor_id}")
+    print(f"✓ Model training completed for sensor: {sensor_id}")
     save_model_to_disk(sensor_id)
 
 
 # ===== BACKGROUND TRAINING LOOP ===============================================
 def training_loop():
     """Background thread that periodically trains models"""
-    print("Training loop started")
+    print("🧠 Training loop started")
 
     while True:
         try:
@@ -247,15 +247,15 @@ def training_loop():
 
             # Train model for each sensor
             for sensor_id in sensor_ids:
-                print(f"Starting training for sensor {sensor_id}...")
+                print(f"⏳ Starting training for sensor {sensor_id}...")
                 train_model(sensor_id)
-                print(f"Training completed for sensor {sensor_id}")
+                print(f"✓ Training completed for sensor {sensor_id}")
 
-            print("Training cycle completed. Training again in 2 minutes...")
+            print("✓ Training cycle completed. Training again in 2 minutes...")
             time.sleep(120)
 
         except Exception as e:
-            print(f"Error in training loop: {e}")
+            print(f"❌ Error in training loop: {e}")
             import traceback
             traceback.print_exc()
             time.sleep(60)
@@ -265,7 +265,7 @@ def predict_next_single_value(sensor_id):
     """Predict only the next single value using the data from the database."""
     with model_lock:
         if sensor_id not in models:
-            print(f"No model available for sensor {sensor_id}")
+            print(f"❌ No model available for sensor {sensor_id}")
             return None
 
         model_info = models[sensor_id]
@@ -276,7 +276,7 @@ def predict_next_single_value(sensor_id):
     data = db.get_recent_temperature_data(sensor_id, limit=30)
 
     if len(data) < 30:
-        print(f"Not enough recent data for prediction: {len(data)} points")
+        print(f"❌ Not enough recent data for prediction: {len(data)} points")
         return None
 
     temperatures = np.array([d[0] for d in data])
@@ -296,7 +296,7 @@ def generate_and_send_prediction(sensor_id):
     try:
         with model_lock:
             if sensor_id not in models:
-                print(f"No model available for sensor {sensor_id}, skipping prediction")
+                print(f"❌ No model available for sensor {sensor_id}, skipping prediction")
                 return
 
         prediction = predict_next_single_value(sensor_id)
@@ -304,10 +304,10 @@ def generate_and_send_prediction(sensor_id):
         if prediction is not None:
             send_prediction_to_datajedi(sensor_id, prediction)
         else:
-            print(f"Could not generate prediction for sensor {sensor_id}")
+            print(f"❌ Could not generate prediction for sensor {sensor_id}")
 
     except Exception as e:
-        print(f"Error generating prediction for sensor {sensor_id}: {e}")
+        print(f"❌ Error generating prediction for sensor {sensor_id}: {e}")
         import traceback
         traceback.print_exc()
 
@@ -315,7 +315,7 @@ def generate_and_send_prediction(sensor_id):
 def send_prediction_to_datajedi(sensor_id, prediction):
     """Send a single predicted temperature reading to DataJediX"""
     if prediction is None:
-        print(f"No prediction to send for sensor {sensor_id}")
+        print(f"❌ No prediction to send for sensor {sensor_id}")
         return
 
     future_time = datetime.datetime.now(datetime.UTC).replace(microsecond=0) + datetime.timedelta(seconds=1)
@@ -337,9 +337,9 @@ def send_prediction_to_datajedi(sensor_id, prediction):
 
     try:
         r = requests.post(DATA_JEDI_URL, json=payload, headers=HEADERS, verify=False)
-        print(f"Sent prediction for sensor {sensor_id}: {prediction:.2f}°C (status: {r.status_code})")
+        print(f"✓ Sent prediction for sensor {sensor_id}: {prediction:.2f}°C (status: {r.status_code})")
     except Exception as e:
-        print(f"Error sending prediction for sensor {sensor_id}: {e}")
+        print(f"❌ Error sending prediction for sensor {sensor_id}: {e}")
 
 
 # ===== FLASK ROUTES ===========================================================
@@ -408,12 +408,11 @@ if __name__ == "__main__":
     ensure_models_directory()
     db.init_database()
 
-    print("Loading saved models from disk...")
+    print("📀 Loading saved models from disk...")
     load_all_models_from_disk()
 
-    print("Starting training thread...")
     training_thread = threading.Thread(target=training_loop, daemon=True)
     training_thread.start()
 
-    print("Server ready - predictions will be generated on-demand when temperature readings are received")
+    print("🗽 Server ready - predictions will be generated on-demand when temperature readings are received")
     app.run(host="0.0.0.0", port=8080, debug=False)
