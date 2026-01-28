@@ -244,8 +244,6 @@ def training_loop():
     while True:
         try:
             sensor_ids = SENSOR_IDS
-
-            # Train model for each sensor
             for sensor_id in sensor_ids:
                 print(f"⏳ Starting training for sensor {sensor_id}...")
                 train_model(sensor_id)
@@ -259,6 +257,7 @@ def training_loop():
             import traceback
             traceback.print_exc()
             time.sleep(60)
+
 
 # ===== PREDICTIONS ============================================================
 def predict_next_single_value(sensor_id):
