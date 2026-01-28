@@ -7,7 +7,6 @@ Simulates 4 sensors sending temperature readings to trigger training and predict
 import requests
 import time
 import numpy as np
-from datetime import datetime
 import sys
 
 # Configuration
