@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Mock sensor data generator for testing app.py
 Sends realistic temperature and noise data to the Flask API
@@ -13,9 +12,8 @@ from datetime import datetime
 # Configuration
 BASE_URL = "http://localhost:8080"
 SENSOR_IDS = [1, 2, 3, 4]
-SEND_INTERVAL = 1  # seconds between sends
+SEND_INTERVAL = 1
 
-# Base temperatures for each sensor (in Celsius)
 BASE_TEMPS = {
     1: 22.0,  # Room temperature
     2: 24.0,  # Slightly warmer room
@@ -23,7 +21,6 @@ BASE_TEMPS = {
     4: 23.0,  # Another room
 }
 
-# Base noise levels for each sensor (in dB)
 BASE_NOISE = {
     1: 45.0,  # Quiet room
     2: 55.0,  # Normal room
@@ -40,16 +37,9 @@ def generate_temperature(sensor_id, counter):
     - Sensor-specific base temperature
     """
     base_temp = BASE_TEMPS.get(sensor_id, 22.0)
-    
-    # Daily cycle (very slow sine wave)
     daily_cycle = 2.0 * math.sin(counter * 0.001)
-    
-    # Random fluctuation
     noise = random.gauss(0, 0.3)
-    
-    # Occasional spikes (5% chance)
     spike = random.uniform(-1, 1) if random.random() < 0.05 else 0
-    
     temperature = base_temp + daily_cycle + noise + spike
     return round(temperature, 2)
 
@@ -62,13 +52,8 @@ def generate_noise(sensor_id, counter):
     - Sensor-specific base level
     """
     base_noise = BASE_NOISE.get(sensor_id, 50.0)
-    
-    # Random fluctuation
     noise = random.gauss(0, 2.0)
-    
-    # Occasional loud events (10% chance)
     spike = random.uniform(5, 15) if random.random() < 0.1 else 0
-    
     noise_level = base_noise + noise + spike
     return round(max(30.0, noise_level), 2)  # Noise can't be below 30 dB
 
@@ -121,13 +106,10 @@ def main():
             timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             print(f"\n[{timestamp}] Sending data (iteration {counter})...")
             
-            # Send data for each sensor
             for sensor_id in SENSOR_IDS:
-                # Generate and send temperature
                 temperature = generate_temperature(sensor_id, counter)
                 send_temperature(sensor_id, temperature)
                 
-                # Generate and send noise
                 noise_level = generate_noise(sensor_id, counter)
                 send_noise(sensor_id, noise_level)
             
