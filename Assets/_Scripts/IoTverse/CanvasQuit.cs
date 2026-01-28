@@ -6,8 +6,8 @@ public class CanvasQuit : MonoBehaviour
     public GameObject portal;
     void Update()
     {
-        // B dugme na desnom kontroleru
-        if (OVRInput.GetDown(OVRInput.Button.Two))
+        // X dugme na lijevom kontroleru
+        if (OVRInput.GetDown(OVRInput.Button.Three))
         {
             if (canvas != null)
             {

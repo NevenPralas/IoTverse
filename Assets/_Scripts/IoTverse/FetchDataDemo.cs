@@ -19,7 +19,6 @@ public class FetchDataDemo : MonoBehaviour
         using (UnityWebRequest req = UnityWebRequest.Get(JsonUrl))
         {
             yield return req.SendWebRequest();
-
             if (req.result != UnityWebRequest.Result.Success)
             {
                 Debug.LogError("Error fetching JSON: " + req.error);
@@ -28,7 +27,6 @@ public class FetchDataDemo : MonoBehaviour
             {
                 string json = req.downloadHandler.text;
                 data = JsonUtility.FromJson<MeasurementData>(json);
-
                 Debug.Log("JSON Loaded! Starting playback...");
                 StartCoroutine(PlayMeasurements());
             }
@@ -40,7 +38,6 @@ public class FetchDataDemo : MonoBehaviour
         while (currentIndex < data.measurements.Length)
         {
             Measurement m = data.measurements[currentIndex];
-
             Debug.Log(
                 "Index: " + currentIndex +
                 " | Timestamp: " + m.timestamp +
@@ -49,11 +46,9 @@ public class FetchDataDemo : MonoBehaviour
                 " | T3: " + m.temperature3 +
                 " | T4: " + m.temperature4
             );
-
             currentIndex++;
-            yield return new WaitForSeconds(1f); 
+            yield return new WaitForSeconds(1f);
         }
-
         Debug.Log("Playback finished!");
     }
 }

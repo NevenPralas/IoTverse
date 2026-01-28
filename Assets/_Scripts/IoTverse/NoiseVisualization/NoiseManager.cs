@@ -3,7 +3,10 @@ using System.Collections.Generic;
 using System.Collections.Concurrent;
 using System.Linq;
 using System.Threading;
+using System.Net;
 using System.Net.Http;
+using System.Net.Security;
+using System.Security.Cryptography.X509Certificates;
 using UnityEngine;
 using XCharts.Runtime;
 using SimpleJSON;
@@ -38,7 +41,12 @@ public class NoiseManager : MonoBehaviour
     // Main-thread pacing state
     private (NoiseData data, int sensorIndex)? pendingItem = null; // next sample awaiting scheduled time
     private bool hasSync = false;
-    private long lastRemoteTimestamp = 0;      // ms
+
+    private long startTimeMillisec;
+
+    public bool onlyLiveData = true;
+
+    private long lastRemoteTimestamp = 0;
     private float lastLocalTimeSec = 0f;       // Unity realtime when last sample applied
     
     private int fetchLatestCount = 30; // Number of latest data points to fetch per request
@@ -51,15 +59,19 @@ public class NoiseManager : MonoBehaviour
 
     private void Start()
     {
-        // Test GetFromJedi
-        Debug.Log("Testing GetFromJedi in NoiseManager...");
-        NoiseData[] testData = GetCurrentNoise();
-        Debug.Log($"Retrieved {testData.Length} data points from Data Jedi.");
+        startTimeMillisec = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
         if (spheres == null || spheres.Length == 0)
         {
             Debug.LogError("No spheres assigned to NoiseManager!");
             return;
+        }
+
+        // Initialize currentSensorsData with a list for each sensor
+        currentSensorsData = new List<List<NoiseData>>();
+        for (int i = 0; i < spheres.Length; i++)
+        {
+            currentSensorsData.Add(new List<NoiseData>());
         }
 
         // activeSensorIndex = spheres[0].SensorIndex;
@@ -115,6 +127,10 @@ public class NoiseManager : MonoBehaviour
         {
             // First sample: apply immediately and set sync anchors
             ApplySampleToSpheres(data, sensorIndex);
+            
+            // Store data for all sensors (for later display switching)
+            currentSensorsData[sensorIndex].Add(data);
+            
             if (sensorIndex == currentSensorDisplayIndex)
             {
                 AddSampleToGraph(data);
@@ -133,6 +149,17 @@ public class NoiseManager : MonoBehaviour
         {
             // Time to apply (or catch up if local is ahead)
             ApplySampleToSpheres(data, sensorIndex);
+            
+            // Store data for all sensors (for later display switching)
+            if (sensorIndex >= 0 && sensorIndex < currentSensorsData.Count)
+            {
+                currentSensorsData[sensorIndex].Add(data);
+                
+                // Maintain 30-second retention for all sensors
+                long cutoffTime = data.timestamp - graphRetentionMs;
+                currentSensorsData[sensorIndex].RemoveAll(d => d.timestamp < cutoffTime);
+            }
+            
             if (sensorIndex == currentSensorDisplayIndex)
             {
                 AddSampleToGraph(data);
@@ -179,6 +206,11 @@ public class NoiseManager : MonoBehaviour
                 // Enqueue sorted data, filtering out old timestamps
                 foreach (var item in allData)
                 {
+                    if (onlyLiveData && item.data.timestamp <= startTimeMillisec)
+                    {
+                        continue; // skip old data
+                    }
+                    
                     if (item.data.timestamp > lastTimestamps[item.sensorIndex])
                     {
                         lastTimestamps[item.sensorIndex] = item.data.timestamp;
@@ -231,7 +263,7 @@ public class NoiseManager : MonoBehaviour
         DrawGraphPoints(sensorData);
 
         // Change graph title to indicate sensor
-        lineChart.GetChartComponent<Title>().text = $"Noise Loudness - Sensor {sensorIndex}";
+        lineChart.GetChartComponent<Title>().text = $"Noise Loudness - Sensor {sensorIndex + 1}";
         lineChart.RefreshChart();
     }
 
@@ -277,6 +309,8 @@ public class NoiseManager : MonoBehaviour
             lineChart.AddXAxisData(label);
             lineChart.AddData(0, sample.decibels);
             
+            currentSensorsData[currentSensorDisplayIndex].Add(sample);
+            
             // Track timestamps
             graphTimestamps.Add((sample.timestamp, label));
             
@@ -316,6 +350,16 @@ public class NoiseManager : MonoBehaviour
             if (removeCount > 0)
             {
                 graphTimestamps.RemoveRange(0, removeCount);
+                
+                // Also remove from currentSensorsData for the current display sensor
+                if (currentSensorDisplayIndex >= 0 && currentSensorDisplayIndex < currentSensorsData.Count)
+                {
+                    int currentDataCount = currentSensorsData[currentSensorDisplayIndex].Count;
+                    if (removeCount <= currentDataCount)
+                    {
+                        currentSensorsData[currentSensorDisplayIndex].RemoveRange(0, removeCount);
+                    }
+                }
             }
 
             lineChart.RefreshChart();
@@ -451,20 +495,53 @@ public class NoiseManager : MonoBehaviour
         return result.ToArray();
     }
 
-    // Generate <dataPointCount> amount of noise data with 500ms difference back in time
+    // Generate mock noise data with realistic wave patterns and sensor-specific phases
     private NoiseData[] generateMockData(int sensorIndex)
     {
-        // Random noise between minDecibels and maxDecibels
-        System.Random random = new System.Random();
         int dataPointCount = 5;
         List<NoiseData> dataPoints = new List<NoiseData>();
         long currentTime = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        
+        // Sensor-specific phase offset
+        float phaseOffset = sensorIndex * (2f * Mathf.PI / Mathf.Max(1, spheres.Length));
+        
+        // Deterministic random per sensor
+        System.Random random = new System.Random(sensorIndex);
+        
         for (int i = 0; i < dataPointCount; i++)
         {
             long timestamp = currentTime - (dataPointCount - i) * 200; // 200ms intervals
-            float decibels = (float)(minDecibels + random.NextDouble() * (maxDecibels - minDecibels));
+            
+            float decibels = GenerateWaveNoiseDecibels(timestamp, phaseOffset, random);
             dataPoints.Add(new NoiseData(timestamp, decibels));
         }
+        
         return dataPoints.ToArray();
+    }
+
+    private float GenerateWaveNoiseDecibels(long timestamp, float phaseOffset, System.Random random)
+    {
+        // Create a realistic pattern using sine/cosine waves with multiple frequencies
+        float baseValue = (minDecibels + maxDecibels) * 0.5f;
+        float range = (maxDecibels - minDecibels) * 0.4f;
+        
+        // Use relative time from start (in seconds) for proper period calculation
+        float relativeTimeSeconds = (timestamp - startTimeMillisec) / 1000f;
+        
+        // Primary wave: 20 second period with sensor-specific phase
+        float primaryWave = Mathf.Sin((relativeTimeSeconds * 2f * Mathf.PI / 20f) + phaseOffset) * range;
+
+        // Secondary wave: 5 second period for more variation
+        float secondaryWave = Mathf.Sin((relativeTimeSeconds * 2f * Mathf.PI / 5f) + phaseOffset * 0.5f) * range * 0.5f;
+        
+        // Add random noise (30% of the range)
+        float noiseAmount = range * 0.3f;
+        float randomNoise = (float)(random.NextDouble() * 2 - 1) * noiseAmount;
+        
+        // Combine all components
+        float decibels = baseValue + primaryWave + secondaryWave + randomNoise;
+        
+        // Clamp to valid range
+        return Mathf.Clamp(decibels, minDecibels, maxDecibels);
     }
 }

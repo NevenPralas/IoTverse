@@ -71,6 +71,11 @@ crashlytics-build.properties
 /[Aa]ssets/[Ss]treamingAssets/aa.meta
 /[Aa]ssets/[Ss]treamingAssets/aa/*
 
+# Backend
+__pycache__/
+/Backend/.idea/
+/Backend/.venv/
+/Backend/.env
 
 # VS Code directory
 .vscode/

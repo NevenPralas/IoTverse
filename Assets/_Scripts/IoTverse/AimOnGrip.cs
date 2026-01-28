@@ -1,7 +1,6 @@
 ﻿using System.Collections;
 using TMPro;
 using UnityEngine;
-using UnityEngine.XR;
 
 public class AimOnGrip : MonoBehaviour
 {
@@ -40,23 +39,25 @@ public class AimOnGrip : MonoBehaviour
     public float flashDuration = 1f;
 
     private Vector3 velocity;
-    private Quaternion rotVelocity = Quaternion.identity;
     private bool isVisible = false;
     private bool flashing = false;
 
+    // UI text reference (ostaje)
     public GameObject text;
-    public GameObject canvas;
-    public GameObject portal;
+
+    private SharedAimCanvasState sharedState;
+
     void Start()
     {
-        if (aimObject == null)
-        {
-            Debug.LogWarning("AimOnGrip: aimObject nije postavljen.");
-        }
-        else
+        if (aimObject != null)
         {
             aimObject.SetActive(true);
             aimObject.transform.localScale = hiddenScale;
+            if (defaultAimMaterial == null)
+            {
+                Renderer r = aimObject.GetComponent<Renderer>();
+                if (r != null) defaultAimMaterial = r.material;
+            }
         }
 
         if (rightHandAnchor == null)
@@ -68,32 +69,25 @@ public class AimOnGrip : MonoBehaviour
         if (laserLine != null && defaultLaserMaterial == null)
             defaultLaserMaterial = laserLine.material;
 
-        if (aimObject != null && defaultAimMaterial == null)
-        {
-            Renderer r = aimObject.GetComponent<Renderer>();
-            if (r != null)
-                defaultAimMaterial = r.material;
-        }
+        sharedState = FindObjectOfType<SharedAimCanvasState>(true);
     }
 
     void Update()
     {
+        if (sharedState == null)
+            sharedState = FindObjectOfType<SharedAimCanvasState>(true);
+
         float gripValue = OVRInput.Get(OVRInput.Axis1D.SecondaryHandTrigger);
         bool gripHeld = gripValue > 0.12f;
 
-        // ---------------------------------------------------
-        // RAYCAST
-        // ---------------------------------------------------
         bool hitEnvironment = false;
         Vector3 targetPos = Vector3.zero;
         Quaternion targetRot = Quaternion.identity;
-
         RaycastHit hitInfo = new RaycastHit();
 
         if (gripHeld && rightHandAnchor != null)
         {
             Ray ray = new Ray(rightHandAnchor.position, rightHandAnchor.forward);
-
             if (Physics.Raycast(ray, out hitInfo, raycastMaxDistance, raycastMask))
             {
                 hitEnvironment = true;
@@ -102,24 +96,20 @@ public class AimOnGrip : MonoBehaviour
             }
         }
 
-        // ---------------------------------------------------
-        // A BUTTON — tek SAD, nakon raycasta!
-        // ---------------------------------------------------
+        // Klik (A) dok držiš grip: flash + NETWORK update shared canvasa
         if (gripHeld && OVRInput.GetDown(OVRInput.Button.One))
         {
             StartCoroutine(FlashMaterials());
-
             if (hitEnvironment)
             {
-                LogTemperatureAtHit(hitInfo);
+                if (sharedState != null)
+                    sharedState.RequestSetPoint(hitInfo.point);
+                else
+                    Debug.LogError("[AimOnGrip] SharedAimCanvasState nije pronađen (nije spawnan?).");
             }
         }
 
-        // ---------------------------------------------------
-        // VISIBLE TOGGLE
-        // ---------------------------------------------------
         bool shouldShow = gripHeld && hitEnvironment;
-
         if (shouldShow && !isVisible)
         {
             isVisible = true;
@@ -130,123 +120,47 @@ public class AimOnGrip : MonoBehaviour
             isVisible = false;
         }
 
-        // ---------------------------------------------------
-        // MOVE AIM OBJECT
-        // ---------------------------------------------------
         if (aimObject != null)
         {
             if (smoothMovement)
             {
                 Vector3 newPos = shouldShow ? targetPos : aimObject.transform.position;
                 Quaternion newRot = shouldShow ? targetRot : aimObject.transform.rotation;
-
-                aimObject.transform.position = Vector3.SmoothDamp(
-                    aimObject.transform.position,
-                    newPos,
-                    ref velocity,
-                    positionSmoothTime);
-
+                aimObject.transform.position = Vector3.SmoothDamp(aimObject.transform.position, newPos, ref velocity, positionSmoothTime);
                 aimObject.transform.rotation = Quaternion.Slerp(
                     aimObject.transform.rotation,
                     newRot,
-                    Time.deltaTime / Mathf.Max(0.0001f, rotationSmoothTime));
+                    Time.deltaTime / Mathf.Max(0.0001f, rotationSmoothTime)
+                );
             }
-            else
+            else if (shouldShow)
             {
-                if (shouldShow)
-                {
-                    aimObject.transform.position = targetPos;
-                    aimObject.transform.rotation = targetRot;
-                }
+                aimObject.transform.position = targetPos;
+                aimObject.transform.rotation = targetRot;
             }
 
-            Vector3 targetScale = shouldShow ? shownScale : hiddenScale;
             aimObject.transform.localScale = Vector3.Lerp(
                 aimObject.transform.localScale,
-                targetScale,
-                Time.deltaTime * scaleShowSpeed);
+                shouldShow ? shownScale : hiddenScale,
+                Time.deltaTime * scaleShowSpeed
+            );
         }
 
-        // ---------------------------------------------------
-        // LASER
-        // ---------------------------------------------------
         if (laserLine != null)
         {
-            if (shouldShow && rightHandAnchor != null)
+            laserLine.enabled = shouldShow;
+            if (shouldShow)
             {
-                laserLine.enabled = true;
                 laserLine.SetPosition(0, rightHandAnchor.position);
-                laserLine.SetPosition(1, hitEnvironment ?
-                    targetPos :
-                    rightHandAnchor.position + rightHandAnchor.forward * laserMaxLength);
-            }
-            else
-            {
-                laserLine.enabled = false;
+                laserLine.SetPosition(1, targetPos);
             }
         }
     }
 
-    private void LogTemperatureAtHit(RaycastHit hit)
+    private IEnumerator PulseHaptics(float s, float d)
     {
-        // Postavljanje Canvasa na mjesto klika
-        float heightOffset = 1.2f; // koliko iznad pogotka
-        Vector3 targetPos = hit.point + Vector3.up * heightOffset;
-        canvas.transform.position = targetPos;
-
-        Transform cam = Camera.main != null ? Camera.main.transform : null;
-
-        if (cam != null)
-        {
-            Vector3 lookDir = cam.position - canvas.transform.position;
-            lookDir.y = 0; // ostaje uspravan
-
-            if (lookDir.sqrMagnitude > 0.001f)
-            {
-                // Okreni prema igracu
-                canvas.transform.rotation = Quaternion.LookRotation(lookDir);
-
-                // Ispravi zrcaljenje (dodaj 180°)
-                canvas.transform.Rotate(0, 180f, 0, Space.Self);
-            }
-        }
-
-        canvas.GetComponent<Canvas>().enabled = true;
-        portal.SetActive(true);
-
-        Vector2 uv = hit.textureCoord;
-
-        HeatMapStaticWithJson hm = hit.collider.GetComponent<HeatMapStaticWithJson>();
-        if (hm == null) hm = hit.collider.GetComponentInParent<HeatMapStaticWithJson>();
-
-        if (hm == null)
-        {
-            Debug.LogWarning("[AimOnGrip] Hit object has no HeatMapStatic.");
-            return;
-        }
-
-        bool uvValid = !(Mathf.Approximately(uv.x, 0f) && Mathf.Approximately(uv.y, 0f));
-
-        float temp;
-
-        if (uvValid)
-        {
-            temp = hm.GetTemperatureAtUV(uv);
-            Debug.Log($"[HeatMap] Temperature at UV {uv} = {temp:F2}°C");
-
-            text.GetComponent<TextMeshProUGUI>().text = $"Temperature = {temp:F2}°C";
-        }
-        else
-        {
-            temp = hm.GetTemperatureAtPointWorld(hit.point);
-            Debug.Log($"[HeatMap] Temperature at world {hit.point} = {temp:F2}°C");
-        }
-    }
-
-    private IEnumerator PulseHaptics(float strength, float duration)
-    {
-        OVRInput.SetControllerVibration(1f, strength, OVRInput.Controller.RTouch);
-        yield return new WaitForSeconds(duration);
+        OVRInput.SetControllerVibration(1f, s, OVRInput.Controller.RTouch);
+        yield return new WaitForSeconds(d);
         OVRInput.SetControllerVibration(0f, 0f, OVRInput.Controller.RTouch);
     }
 
@@ -255,28 +169,31 @@ public class AimOnGrip : MonoBehaviour
         if (flashing) yield break;
         flashing = true;
 
-        if (laserLine != null && flashMaterial != null)
-            laserLine.material = flashMaterial;
-
-        if (aimObject != null && flashMaterial != null)
+        if (laserLine) laserLine.material = flashMaterial;
+        if (aimObject)
         {
             Renderer r = aimObject.GetComponent<Renderer>();
-            if (r != null)
-                r.material = flashMaterial;
+            if (r != null) r.material = flashMaterial;
         }
 
         yield return new WaitForSeconds(flashDuration);
 
-        if (laserLine != null && defaultLaserMaterial != null)
-            laserLine.material = defaultLaserMaterial;
-
-        if (aimObject != null && defaultAimMaterial != null)
+        if (laserLine) laserLine.material = defaultLaserMaterial;
+        if (aimObject)
         {
             Renderer r = aimObject.GetComponent<Renderer>();
-            if (r != null)
-                r.material = defaultAimMaterial;
+            if (r != null) r.material = defaultAimMaterial;
         }
 
         flashing = false;
+    }
+
+    // koristi SharedAimCanvasState za update teksta (lokalno)
+    public void UpdateTemperatureDisplay(float temperature)
+    {
+        if (text != null)
+        {
+            text.GetComponent<TextMeshProUGUI>().text = $"Temperature = {temperature:F2}°C";
+        }
     }
 }
