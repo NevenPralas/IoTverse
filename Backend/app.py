@@ -95,14 +95,7 @@ def ensure_models_directory():
 
 
 def prepare_sequences(data, seq_length=60):
-    """
-    Prepare sequences for training with enhanced features
-    
-    Improvements:
-    - Temperature rate of change (derivative)
-    - Better normalization with epsilon to avoid division by zero
-    - Moving averages for trend detection
-    """
+    """Prepare sequences for training with enhanced features"""
     if len(data) < seq_length + 1:
         return None
 
@@ -152,7 +145,7 @@ def save_model_to_disk(sensor_id, val_loss=None):
     """Save the model and its metadata to disk"""
     with model_lock:
         if sensor_id not in models:
-            print(f"❌ No model to save for sensor {sensor_id}")
+            print(f"No model to save for sensor {sensor_id}")
             return False
 
         model_info = models[sensor_id]
@@ -177,11 +170,11 @@ def save_model_to_disk(sensor_id, val_loss=None):
         with open(metadata_path, 'w') as f:
             json.dump(metadata, f, indent=2)
 
-        print(f"✓ Model saved to disk for sensor {sensor_id}" + 
+        print(f"Model saved to disk for sensor {sensor_id}" +
               (f" (val_loss: {val_loss:.6f})" if val_loss else ""))
         return True
     except Exception as e:
-        print(f"❌ Error saving model for sensor {sensor_id}: {e}")
+        print(f"Error saving model for sensor {sensor_id}: {e}")
         return False
 
 
@@ -191,7 +184,7 @@ def load_model_from_disk(sensor_id):
     metadata_path = os.path.join(MODELS_DIR, f"metadata_{sensor_id}.json")
 
     if not os.path.exists(model_path) or not os.path.exists(metadata_path):
-        print(f"❌ No saved model found for sensor {sensor_id}")
+        print(f"No saved model found for sensor {sensor_id}")
         return False
 
     try:
@@ -220,23 +213,23 @@ def load_model_from_disk(sensor_id):
             }
 
         val_loss_str = f", val_loss: {metadata['val_loss']:.6f}" if metadata.get('val_loss') else ""
-        print(f"✓ Model loaded from disk for sensor {sensor_id} (saved at {metadata.get('saved_at', 'unknown')}{val_loss_str})")
+        print(f"Model loaded from disk for sensor {sensor_id} (saved at {metadata.get('saved_at', 'unknown')}{val_loss_str})")
         return True
     except Exception as e:
-        print(f"❌ Error loading model for sensor {sensor_id}: {e}")
+        print(f"Error loading model for sensor {sensor_id}: {e}")
         return False
 
 
 def load_all_models_from_disk():
     """Load all saved models from disk on startup"""
     if not os.path.exists(MODELS_DIR):
-        print("❌ No models directory found")
+        print("No models directory found")
         return
 
     model_files = [f for f in os.listdir(MODELS_DIR) if f.startswith('model_') and f.endswith('.pt')]
 
     if not model_files:
-        print("❌ No saved models found")
+        print("No saved models found")
         return
 
     print(f"Found {len(model_files)} saved model(s)")
@@ -255,13 +248,13 @@ def train_model(sensor_id):
     - Gradient clipping
     - Best model checkpointing
     """
-    print(f"🎯 Training model for sensor: {sensor_id}")
+    print(f"Training model for sensor: {sensor_id}")
 
     # Fetch more data for better training (500 points if available)
     data = db.get_recent_temperature_data(sensor_id, limit=500)
 
     if len(data) < REQ_DATA_POINTS:
-        print(f"❌ Not enough data for sensor {sensor_id}: {len(data)} points (need {REQ_DATA_POINTS})")
+        print(f"Not enough data for sensor {sensor_id}: {len(data)} points (need {REQ_DATA_POINTS})")
         return
 
     # Split data into train and validation (80/20 split)
@@ -272,7 +265,7 @@ def train_model(sensor_id):
     # Prepare sequences for training
     train_result = prepare_sequences(train_data, SEQUENCE_SIZE)
     if train_result is None:
-        print(f"❌ Cannot prepare training sequences for sensor {sensor_id}")
+        print(f"Cannot prepare training sequences for sensor {sensor_id}")
         return
 
     X_train, y_train, mean, std = train_result
@@ -280,7 +273,7 @@ def train_model(sensor_id):
     # Prepare sequences for validation
     val_result = prepare_sequences(val_data, SEQUENCE_SIZE)
     if val_result is None:
-        print(f"⚠️ Not enough validation data, using training data only")
+        print(f"Not enough validation data, using training data only")
         X_val, y_val = None, None
     else:
         X_val, y_val, _, _ = val_result
@@ -332,7 +325,7 @@ def train_model(sensor_id):
     epochs = 100
     batch_size = 16
 
-    print(f"📊 Training with {len(X_train)} samples, validating with {len(X_val) if X_val is not None else 0} samples")
+    print(f"Training with {len(X_train)} samples, validating with {len(X_val) if X_val is not None else 0} samples")
 
     for epoch in range(epochs):
         # === TRAINING PHASE ===
@@ -395,37 +388,37 @@ def train_model(sensor_id):
 
         # Early stopping
         if patience_counter >= max_patience:
-            print(f"🛑 Early stopping at epoch {epoch + 1} (best val_loss: {best_val_loss:.6f})")
+            print(f"Early stopping at epoch {epoch + 1} (best val_loss: {best_val_loss:.6f})")
             break
 
     # Restore best model
     if best_model_state is not None:
         model.load_state_dict(best_model_state)
-        print(f"✓ Restored best model with val_loss: {best_val_loss:.6f}")
+        print(f"Restored best model with val_loss: {best_val_loss:.6f}")
 
     model.eval()
-    print(f"✓ Model training completed for sensor: {sensor_id}")
+    print(f"Model training completed for sensor: {sensor_id}")
     save_model_to_disk(sensor_id, best_val_loss)
 
 
 # ===== BACKGROUND TRAINING LOOP ===============================================
 def training_loop():
     """Background thread that periodically trains models"""
-    print("🧠 Training loop started")
+    print("Training loop started")
 
     while True:
         try:
             time.sleep(TRAINING_SCHEDULE_SEC)
             sensor_ids = SENSOR_IDS
             for sensor_id in sensor_ids:
-                print(f"⏳ Starting training for sensor {sensor_id}...")
+                print(f"Starting training for sensor {sensor_id}...")
                 train_model(sensor_id)
-                print(f"✓ Training completed for sensor {sensor_id}")
+                print(f"Training completed for sensor {sensor_id}")
 
-            print(f"✓ Training cycle completed. Next training in {TRAINING_SCHEDULE_SEC} seconds...")
+            print(f"Training cycle completed. Next training in {TRAINING_SCHEDULE_SEC} seconds...")
 
         except Exception as e:
-            print(f"❌ Error in training loop: {e}")
+            print(f"Error in training loop: {e}")
             import traceback
             traceback.print_exc()
             time.sleep(60)
@@ -442,7 +435,7 @@ def predict_next_single_value(sensor_id):
     """
     with model_lock:
         if sensor_id not in models:
-            print(f"❌ No model available for sensor {sensor_id}")
+            print(f"No model available for sensor {sensor_id}")
             return None
 
         model_info = models[sensor_id]
@@ -454,7 +447,7 @@ def predict_next_single_value(sensor_id):
     data = db.get_recent_temperature_data(sensor_id, limit=SEQUENCE_SIZE)
 
     if len(data) < SEQUENCE_SIZE:
-        print(f"❌ Not enough recent data for prediction: {len(data)} points (need {SEQUENCE_SIZE})")
+        print(f"Not enough recent data for prediction: {len(data)} points (need {SEQUENCE_SIZE})")
         return None
 
     temperatures = np.array([d[0] for d in data])
@@ -502,7 +495,7 @@ def generate_and_send_prediction(sensor_id):
     try:
         with model_lock:
             if sensor_id not in models:
-                print(f"❌ No model available for sensor {sensor_id}, skipping prediction")
+                print(f"No model available for sensor {sensor_id}, skipping prediction")
                 return
 
         prediction = predict_next_single_value(sensor_id)
@@ -510,10 +503,10 @@ def generate_and_send_prediction(sensor_id):
         if prediction is not None:
             send_prediction_to_datajedi(sensor_id, prediction)
         else:
-            print(f"❌ Could not generate prediction for sensor {sensor_id}")
+            print(f"Could not generate prediction for sensor {sensor_id}")
 
     except Exception as e:
-        print(f"❌ Error generating prediction for sensor {sensor_id}: {e}")
+        print(f"Error generating prediction for sensor {sensor_id}: {e}")
         import traceback
         traceback.print_exc()
 
@@ -521,7 +514,7 @@ def generate_and_send_prediction(sensor_id):
 def send_prediction_to_datajedi(sensor_id, prediction):
     """Send a single predicted temperature reading to DataJediX"""
     if prediction is None:
-        print(f"❌ No prediction to send for sensor {sensor_id}")
+        print(f"No prediction to send for sensor {sensor_id}")
         return
 
     future_time = datetime.datetime.now(datetime.UTC).replace(microsecond=0) + datetime.timedelta(seconds=30)
@@ -543,16 +536,16 @@ def send_prediction_to_datajedi(sensor_id, prediction):
 
     try:
         r = requests.post(DATA_JEDI_URL, json=payload, headers=HEADERS, verify=False)
-        print(f"✓ Sent prediction for sensor {sensor_id}: {prediction:.2f}°C (status: {r.status_code})")
+        print(f"Sent prediction for sensor {sensor_id}: {prediction:.2f}°C (status: {r.status_code})")
     except Exception as e:
-        print(f"❌ Error sending prediction for sensor {sensor_id}: {e}")
+        print(f"Error sending prediction for sensor {sensor_id}: {e}")
 
 
 # ===== FLASK ROUTES ===========================================================
 @app.route("/sensors/temperature/<sensor_id>", methods=["POST"])
 def receive_temperature(sensor_id):
     data = request.get_json()
-    print(f"🌡️ Received temperature from sensor {sensor_id}: {data}")
+    print(f"Received temperature from sensor {sensor_id}: {data}")
     temp_value = data.get("temperature")
 
     if temp_value is None:
@@ -584,7 +577,7 @@ def receive_temperature(sensor_id):
 @app.route("/sensors/noisedetector/<sensor_id>", methods=["POST"])
 def receive_noise(sensor_id):
     data = request.get_json()
-    print(f"🗣 Received noise from {sensor_id}: {data}")
+    print(f"Received noise from {sensor_id}: {data}")
     noise_value = data["noise"]
 
     timestamp = datetime.datetime.now(datetime.UTC).replace(microsecond=0).isoformat()
@@ -614,12 +607,12 @@ if __name__ == "__main__":
     ensure_models_directory()
     db.init_database()
 
-    print("📀 Loading saved models from disk...")
+    print("Loading saved models from disk...")
     load_all_models_from_disk()
 
     training_thread = threading.Thread(target=training_loop, daemon=True)
     training_thread.start()
 
-    print("🗽 Server ready - predictions will be generated on-demand when temperature readings are received")
-    print(f"📊 Model config: SEQUENCE_SIZE={SEQUENCE_SIZE}, HIDDEN_SIZE={HIDDEN_SIZE}, NUM_LAYERS={NUM_LAYERS}")
+    print("Server ready - predictions will be generated on-demand when temperature readings are received")
+    print(f"Model config: SEQUENCE_SIZE={SEQUENCE_SIZE}, HIDDEN_SIZE={HIDDEN_SIZE}, NUM_LAYERS={NUM_LAYERS}")
     app.run(host="0.0.0.0", port=8080, debug=False)
