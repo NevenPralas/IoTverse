@@ -25,8 +25,12 @@ MODELS_DIR = "models"
 SENSOR_IDS = [1, 2, 3, 4]
 INITIAL_TRAINING_DELAY_SEC = 20
 TRAINING_SCHEDULE_SEC = 120
-REQ_DATA_POINTS = 60
-SEQUENCE_SIZE = 30
+
+REQ_DATA_POINTS = 200
+SEQUENCE_SIZE = 60
+HIDDEN_SIZE = 128
+NUM_LAYERS = 3
+DROPOUT = 0.2
 
 
 # ===== CONFIG =================================================================
@@ -42,21 +46,44 @@ model_lock = threading.Lock()
 
 # ===== PYTORCH MODEL ==========================================================
 class TemperatureLSTM(nn.Module):
-    """LSTM model for temperature time series prediction"""
+    """Enhanced LSTM model for temperature time series prediction"""
 
-    def __init__(self, input_size=1, hidden_size=64, num_layers=2, output_size=1):
+    def __init__(self, input_size=1, hidden_size=128, num_layers=3, dropout=0.2, output_size=1):
         super(TemperatureLSTM, self).__init__()
         self.hidden_size = hidden_size
         self.num_layers = num_layers
 
-        self.lstm = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True)
-        self.fc = nn.Linear(hidden_size, output_size)
+        self.lstm = nn.LSTM(
+            input_size, 
+            hidden_size, 
+            num_layers, 
+            batch_first=True,
+            dropout=dropout if num_layers > 1 else 0
+        )
+        
+        self.dropout = nn.Dropout(dropout)
+        
+        self.fc1 = nn.Linear(hidden_size, 64)
+        self.relu = nn.ReLU()
+        self.fc2 = nn.Linear(64, output_size)
 
     def forward(self, x):
         # x shape: (batch, seq_len, input_size)
         lstm_out, _ = self.lstm(x)
+        
+        # Take the last output
         last_output = lstm_out[:, -1, :]
-        prediction = self.fc(last_output)
+        
+        # Apply dropout
+        x = self.dropout(last_output)
+        
+        # First FC layer with activation
+        x = self.fc1(x)
+        x = self.relu(x)
+        x = self.dropout(x)
+        
+        # Final prediction
+        prediction = self.fc2(x)
         return prediction
 
 
@@ -67,27 +94,61 @@ def ensure_models_directory():
         print(f"✓ Created models directory: {MODELS_DIR}")
 
 
-def prepare_sequences(data, seq_length=30):
-    """Prepare sequences for training"""
+def prepare_sequences(data, seq_length=60):
+    """
+    Prepare sequences for training with enhanced features
+    
+    Improvements:
+    - Temperature rate of change (derivative)
+    - Better normalization with epsilon to avoid division by zero
+    - Moving averages for trend detection
+    """
     if len(data) < seq_length + 1:
-        return None, None
+        return None
 
     temperatures = np.array([d[0] for d in data])
 
-    # Normalize data
-    mean = temperatures.mean()
-    std = temperatures.std() if temperatures.std() > 0 else 1.0
-    temperatures_norm = (temperatures - mean) / std
+    # Calculate rate of change (temperature derivative)
+    temp_diff = np.diff(temperatures, prepend=temperatures[0])
+    
+    # Calculate moving averages for trend detection
+    window_size = min(7, len(temperatures) // 4)
+    if window_size > 1:
+        moving_avg = np.convolve(temperatures, np.ones(window_size)/window_size, mode='same')
+    else:
+        moving_avg = temperatures.copy()
+
+    # Normalize data with epsilon to avoid division by zero
+    temp_mean = temperatures.mean()
+    temp_std = temperatures.std() if temperatures.std() > 1e-6 else 1.0
+    
+    diff_mean = temp_diff.mean()
+    diff_std = temp_diff.std() if temp_diff.std() > 1e-6 else 1.0
+    
+    ma_mean = moving_avg.mean()
+    ma_std = moving_avg.std() if moving_avg.std() > 1e-6 else 1.0
+
+    # Normalize all features
+    temperatures_norm = (temperatures - temp_mean) / temp_std
+    temp_diff_norm = (temp_diff - diff_mean) / diff_std
+    moving_avg_norm = (moving_avg - ma_mean) / ma_std
+
+    # Combine features: temperature, rate of change, and moving average
+    features = np.stack([
+        temperatures_norm,
+        temp_diff_norm,
+        moving_avg_norm
+    ], axis=1)
 
     X, y = [], []
     for i in range(len(temperatures_norm) - seq_length):
-        X.append(temperatures_norm[i:i + seq_length])
+        X.append(features[i:i + seq_length])
         y.append(temperatures_norm[i + seq_length])
 
-    return np.array(X), np.array(y), mean, std
+    return np.array(X), np.array(y), temp_mean, temp_std
 
 
-def save_model_to_disk(sensor_id):
+def save_model_to_disk(sensor_id, val_loss=None):
     """Save the model and its metadata to disk"""
     with model_lock:
         if sensor_id not in models:
@@ -107,12 +168,17 @@ def save_model_to_disk(sensor_id):
         metadata = {
             'mean': float(mean),
             'std': float(std),
-            'saved_at': datetime.datetime.now(datetime.UTC).isoformat()
+            'val_loss': float(val_loss) if val_loss is not None else None,
+            'saved_at': datetime.datetime.now(datetime.UTC).isoformat(),
+            'hidden_size': HIDDEN_SIZE,
+            'num_layers': NUM_LAYERS,
+            'sequence_size': SEQUENCE_SIZE
         }
         with open(metadata_path, 'w') as f:
-            json.dump(metadata, f)
+            json.dump(metadata, f, indent=2)
 
-        print(f"✓ Model saved to disk for sensor {sensor_id}")
+        print(f"✓ Model saved to disk for sensor {sensor_id}" + 
+              (f" (val_loss: {val_loss:.6f})" if val_loss else ""))
         return True
     except Exception as e:
         print(f"❌ Error saving model for sensor {sensor_id}: {e}")
@@ -132,7 +198,16 @@ def load_model_from_disk(sensor_id):
         with open(metadata_path, 'r') as f:
             metadata = json.load(f)
 
-        model = TemperatureLSTM(input_size=1, hidden_size=64, num_layers=2)
+        # Use saved hyperparameters or defaults
+        hidden_size = metadata.get('hidden_size', HIDDEN_SIZE)
+        num_layers = metadata.get('num_layers', NUM_LAYERS)
+        
+        model = TemperatureLSTM(
+            input_size=3,  # temperature, diff, moving_avg
+            hidden_size=hidden_size,
+            num_layers=num_layers,
+            dropout=DROPOUT
+        )
 
         model.load_state_dict(torch.load(model_path, weights_only=True))
         model.eval()
@@ -144,7 +219,8 @@ def load_model_from_disk(sensor_id):
                 'std': metadata['std']
             }
 
-        print(f"✓ Model loaded from disk for sensor {sensor_id} (saved at {metadata.get('saved_at', 'unknown')})")
+        val_loss_str = f", val_loss: {metadata['val_loss']:.6f}" if metadata.get('val_loss') else ""
+        print(f"✓ Model loaded from disk for sensor {sensor_id} (saved at {metadata.get('saved_at', 'unknown')}{val_loss_str})")
         return True
     except Exception as e:
         print(f"❌ Error loading model for sensor {sensor_id}: {e}")
@@ -171,71 +247,165 @@ def load_all_models_from_disk():
 
 
 def train_model(sensor_id):
-    """Train or update the model for a specific sensor"""
-    print(f"Training model for sensor: {sensor_id}")
+    """
+    Train or update the model for a specific sensor with improvements:
+    - Train/validation split
+    - Early stopping
+    - Learning rate scheduling
+    - Gradient clipping
+    - Best model checkpointing
+    """
+    print(f"🎯 Training model for sensor: {sensor_id}")
 
-    data = db.get_recent_temperature_data(sensor_id)
+    # Fetch more data for better training (500 points if available)
+    data = db.get_recent_temperature_data(sensor_id, limit=500)
 
     if len(data) < REQ_DATA_POINTS:
-        print(f"❌ Not enough data for sensor {sensor_id}: {len(data)} points")
+        print(f"❌ Not enough data for sensor {sensor_id}: {len(data)} points (need {REQ_DATA_POINTS})")
         return
 
-    seq_length = SEQUENCE_SIZE
+    # Split data into train and validation (80/20 split)
+    split_idx = int(len(data) * 0.8)
+    train_data = data[:split_idx]
+    val_data = data[split_idx:]
 
-    result = prepare_sequences(data, seq_length)
-    if result is None:
-        print(f"❌ Cannot prepare sequences for sensor {sensor_id}")
+    # Prepare sequences for training
+    train_result = prepare_sequences(train_data, SEQUENCE_SIZE)
+    if train_result is None:
+        print(f"❌ Cannot prepare training sequences for sensor {sensor_id}")
         return
 
-    X, y, mean, std = result
+    X_train, y_train, mean, std = train_result
 
-    X_tensor = torch.FloatTensor(X).unsqueeze(-1)
-    y_tensor = torch.FloatTensor(y).unsqueeze(-1)
+    # Prepare sequences for validation
+    val_result = prepare_sequences(val_data, SEQUENCE_SIZE)
+    if val_result is None:
+        print(f"⚠️ Not enough validation data, using training data only")
+        X_val, y_val = None, None
+    else:
+        X_val, y_val, _, _ = val_result
 
+    # Convert to tensors
+    X_train_tensor = torch.FloatTensor(X_train)
+    y_train_tensor = torch.FloatTensor(y_train).unsqueeze(-1)
+    
+    if X_val is not None:
+        X_val_tensor = torch.FloatTensor(X_val)
+        y_val_tensor = torch.FloatTensor(y_val).unsqueeze(-1)
+
+    # Create or update model
     with model_lock:
         if sensor_id not in models:
             models[sensor_id] = {
-                'model': TemperatureLSTM(input_size=1, hidden_size=64, num_layers=2),
+                'model': TemperatureLSTM(
+                    input_size=3,  # temperature, diff, moving_avg
+                    hidden_size=HIDDEN_SIZE,
+                    num_layers=NUM_LAYERS,
+                    dropout=DROPOUT
+                ),
                 'mean': mean,
                 'std': std
             }
         else:
+            # Update normalization parameters
             models[sensor_id]['mean'] = mean
             models[sensor_id]['std'] = std
 
         model = models[sensor_id]['model']
 
+    # Training setup
     criterion = nn.MSELoss()
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001, weight_decay=1e-5)
+    
+    # Learning rate scheduler - reduces LR when validation loss plateaus
+    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+        optimizer, mode='min', factor=0.5, patience=5
+    )
+
+    # Early stopping parameters
+    best_val_loss = float('inf')
+    patience_counter = 0
+    max_patience = 15
+    best_model_state = None
 
     model.train()
-    epochs = 50
+    epochs = 100
     batch_size = 16
 
+    print(f"📊 Training with {len(X_train)} samples, validating with {len(X_val) if X_val is not None else 0} samples")
+
     for epoch in range(epochs):
-        total_loss = 0
+        # === TRAINING PHASE ===
+        model.train()
+        total_train_loss = 0
         num_batches = 0
 
+        # Shuffle training data
+        indices = torch.randperm(len(X_train_tensor))
+        X_train_shuffled = X_train_tensor[indices]
+        y_train_shuffled = y_train_tensor[indices]
+
         # Mini-batch training
-        for i in range(0, len(X_tensor), batch_size):
-            batch_X = X_tensor[i:i + batch_size]
-            batch_y = y_tensor[i:i + batch_size]
+        for i in range(0, len(X_train_tensor), batch_size):
+            batch_X = X_train_shuffled[i:i + batch_size]
+            batch_y = y_train_shuffled[i:i + batch_size]
 
             optimizer.zero_grad()
             outputs = model(batch_X)
             loss = criterion(outputs, batch_y)
             loss.backward()
+            
+            # Gradient clipping to prevent exploding gradients
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            
             optimizer.step()
 
-            total_loss += loss.item()
+            total_train_loss += loss.item()
             num_batches += 1
 
-        if (epoch + 1) % 10 == 0:
-            avg_loss = total_loss / num_batches
-            print(f"Sensor {sensor_id} - Epoch [{epoch + 1}/{epochs}], Loss: {avg_loss:.6f}")
+        avg_train_loss = total_train_loss / num_batches
 
+        # === VALIDATION PHASE ===
+        if X_val is not None:
+            model.eval()
+            with torch.no_grad():
+                val_outputs = model(X_val_tensor)
+                val_loss = criterion(val_outputs, y_val_tensor).item()
+        else:
+            val_loss = avg_train_loss
+
+        # Update learning rate based on validation loss
+        scheduler.step(val_loss)
+
+        # Early stopping check
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            patience_counter = 0
+            # Save best model state
+            best_model_state = model.state_dict().copy()
+        else:
+            patience_counter += 1
+
+        # Print progress every 10 epochs
+        if (epoch + 1) % 10 == 0:
+            current_lr = optimizer.param_groups[0]['lr']
+            print(f"Sensor {sensor_id} - Epoch [{epoch + 1}/{epochs}], "
+                  f"Train Loss: {avg_train_loss:.6f}, Val Loss: {val_loss:.6f}, "
+                  f"LR: {current_lr:.6f}, Patience: {patience_counter}/{max_patience}")
+
+        # Early stopping
+        if patience_counter >= max_patience:
+            print(f"🛑 Early stopping at epoch {epoch + 1} (best val_loss: {best_val_loss:.6f})")
+            break
+
+    # Restore best model
+    if best_model_state is not None:
+        model.load_state_dict(best_model_state)
+        print(f"✓ Restored best model with val_loss: {best_val_loss:.6f}")
+
+    model.eval()
     print(f"✓ Model training completed for sensor: {sensor_id}")
-    save_model_to_disk(sensor_id)
+    save_model_to_disk(sensor_id, best_val_loss)
 
 
 # ===== BACKGROUND TRAINING LOOP ===============================================
@@ -245,14 +415,14 @@ def training_loop():
 
     while True:
         try:
+            time.sleep(TRAINING_SCHEDULE_SEC)
             sensor_ids = SENSOR_IDS
             for sensor_id in sensor_ids:
                 print(f"⏳ Starting training for sensor {sensor_id}...")
                 train_model(sensor_id)
                 print(f"✓ Training completed for sensor {sensor_id}")
 
-            print("✓ Training cycle completed. Training again in 2 minutes...")
-            time.sleep(120)
+            print(f"✓ Training cycle completed. Next training in {TRAINING_SCHEDULE_SEC} seconds...")
 
         except Exception as e:
             print(f"❌ Error in training loop: {e}")
@@ -263,7 +433,13 @@ def training_loop():
 
 # ===== PREDICTIONS ============================================================
 def predict_next_single_value(sensor_id):
-    """Predict only the next single value using the data from the database."""
+    """
+    Predict only the next single value using the data from the database.
+    
+    Improvements:
+    - Uses enhanced features (temperature, diff, moving average)
+    - Matches the sequence size used during training
+    """
     with model_lock:
         if sensor_id not in models:
             print(f"❌ No model available for sensor {sensor_id}")
@@ -274,21 +450,50 @@ def predict_next_single_value(sensor_id):
         mean = model_info['mean']
         std = model_info['std']
 
-    data = db.get_recent_temperature_data(sensor_id, limit=30)
+    # Fetch data matching the sequence size
+    data = db.get_recent_temperature_data(sensor_id, limit=SEQUENCE_SIZE)
 
-    if len(data) < 30:
-        print(f"❌ Not enough recent data for prediction: {len(data)} points")
+    if len(data) < SEQUENCE_SIZE:
+        print(f"❌ Not enough recent data for prediction: {len(data)} points (need {SEQUENCE_SIZE})")
         return None
 
     temperatures = np.array([d[0] for d in data])
+    
+    # Calculate features (same as training)
+    temp_diff = np.diff(temperatures, prepend=temperatures[0])
+    
+    window_size = min(7, len(temperatures) // 4)
+    if window_size > 1:
+        moving_avg = np.convolve(temperatures, np.ones(window_size)/window_size, mode='same')
+    else:
+        moving_avg = temperatures.copy()
+    
+    # Normalize using training statistics
     temperatures_norm = (temperatures - mean) / std
+    
+    # For diff and moving_avg, use their own normalization
+    diff_mean = temp_diff.mean()
+    diff_std = temp_diff.std() if temp_diff.std() > 1e-6 else 1.0
+    temp_diff_norm = (temp_diff - diff_mean) / diff_std
+    
+    ma_mean = moving_avg.mean()
+    ma_std = moving_avg.std() if moving_avg.std() > 1e-6 else 1.0
+    moving_avg_norm = (moving_avg - ma_mean) / ma_std
+    
+    # Combine features
+    features = np.stack([
+        temperatures_norm,
+        temp_diff_norm,
+        moving_avg_norm
+    ], axis=1)
 
     model.eval()
 
     with torch.no_grad():
-        X = torch.FloatTensor(temperatures_norm).unsqueeze(0).unsqueeze(-1)
+        X = torch.FloatTensor(features).unsqueeze(0)  # Shape: (1, seq_len, 3)
         pred_norm = model(X).item()
         pred_denorm = pred_norm * std + mean
+    
     return pred_denorm
 
 
@@ -416,4 +621,5 @@ if __name__ == "__main__":
     training_thread.start()
 
     print("🗽 Server ready - predictions will be generated on-demand when temperature readings are received")
+    print(f"📊 Model config: SEQUENCE_SIZE={SEQUENCE_SIZE}, HIDDEN_SIZE={HIDDEN_SIZE}, NUM_LAYERS={NUM_LAYERS}")
     app.run(host="0.0.0.0", port=8080, debug=False)

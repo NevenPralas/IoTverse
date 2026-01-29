@@ -11,6 +11,7 @@ from datetime import datetime
 
 # Configuration
 BASE_URL = "http://localhost:8080"
+# BASE_URL = "http://172.20.10.5:8080/"
 SENSOR_IDS = [1, 2, 3, 4]
 SEND_INTERVAL = 1
 
