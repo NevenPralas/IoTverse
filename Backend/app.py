@@ -12,6 +12,7 @@ import json
 import db
 import urllib3
 
+
 # ===== CONSTANTS ==============================================================
 DATA_JEDI_URL = "https://djx.entlab.hr/m2m/trusted/data"
 HEADERS = {
@@ -26,6 +27,7 @@ INITIAL_TRAINING_DELAY_SEC = 20
 TRAINING_SCHEDULE_SEC = 120
 REQ_DATA_POINTS = 60
 SEQUENCE_SIZE = 30
+
 
 # ===== CONFIG =================================================================
 load_dotenv()
@@ -284,7 +286,7 @@ def predict_next_single_value(sensor_id):
     model.eval()
 
     with torch.no_grad():
-        X = torch.FloatTensor(temperatures_norm[-30:]).unsqueeze(0).unsqueeze(-1)
+        X = torch.FloatTensor(temperatures_norm).unsqueeze(0).unsqueeze(-1)
         pred_norm = model(X).item()
         pred_denorm = pred_norm * std + mean
     return pred_denorm
@@ -317,7 +319,7 @@ def send_prediction_to_datajedi(sensor_id, prediction):
         print(f"❌ No prediction to send for sensor {sensor_id}")
         return
 
-    future_time = datetime.datetime.now(datetime.UTC).replace(microsecond=0) + datetime.timedelta(seconds=1)
+    future_time = datetime.datetime.now(datetime.UTC).replace(microsecond=0) + datetime.timedelta(seconds=30)
 
     payload = {
         "source": {
