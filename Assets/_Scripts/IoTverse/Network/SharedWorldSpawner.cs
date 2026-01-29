@@ -11,11 +11,15 @@ public class SharedWorldSpawner : MonoBehaviour, INetworkRunnerCallbacks
     public NetworkObject heatmapMarkerPrefab;
     public NetworkObject sharedAimCanvasStatePrefab;
 
+    [Header("NEW: Shared noise UI state (NetworkObject)")]
+    public NetworkObject sharedNoiseCanvasStatePrefab;
+
     private NetworkRunner _boundRunner;
     private bool _callbacksAdded;
 
     private NetworkObject _spawnedHeatmapMarker;
     private NetworkObject _spawnedAimState;
+    private NetworkObject _spawnedNoiseState;
 
     private bool _spawnQueued;
 
@@ -34,7 +38,7 @@ public class SharedWorldSpawner : MonoBehaviour, INetworkRunnerCallbacks
         _boundRunner.AddCallbacks(this);
         _callbacksAdded = true;
 
-        Debug.Log($"[SharedWorldSpawner] Bound to RUNNING runner: {_boundRunner.name} | Mode={_boundRunner.GameMode} | IsServer={_boundRunner.IsServer}");
+        Debug.Log($"[SharedWorldSpawner] Bound to RUNNING runner: {_boundRunner.name} | Mode={_boundRunner.GameMode} | IsServer={_boundRunner.IsServer} | IsSharedMaster={_boundRunner.IsSharedModeMasterClient}");
     }
 
     private NetworkRunner FindRunningRunner()
@@ -64,17 +68,18 @@ public class SharedWorldSpawner : MonoBehaviour, INetworkRunnerCallbacks
 
     private bool HeatmapMarkerAlreadyExists() => FindObjectOfType<SharedHeatmapStateMarker>(true) != null;
     private bool AimStateAlreadyExists() => FindObjectOfType<SharedAimCanvasState>(true) != null;
+    private bool NoiseStateAlreadyExists() => FindObjectOfType<SharedNoiseCanvasState>(true) != null;
 
     // --- Callbacks ---
     public void OnPlayerJoined(NetworkRunner runner, PlayerRef player)
     {
-        Debug.Log($"[SharedWorldSpawner] OnPlayerJoined | player={player} | Mode={runner.GameMode} | IsServer={runner.IsServer}");
+        Debug.Log($"[SharedWorldSpawner] OnPlayerJoined | player={player} | Mode={runner.GameMode} | IsServer={runner.IsServer} | IsSharedMaster={runner.IsSharedModeMasterClient}");
         QueueSpawn(runner);
     }
 
     public void OnSceneLoadDone(NetworkRunner runner)
     {
-        Debug.Log($"[SharedWorldSpawner] OnSceneLoadDone | Mode={runner.GameMode} | IsServer={runner.IsServer}");
+        Debug.Log($"[SharedWorldSpawner] OnSceneLoadDone | Mode={runner.GameMode} | IsServer={runner.IsServer} | IsSharedMaster={runner.IsSharedModeMasterClient}");
         QueueSpawn(runner);
     }
 
@@ -95,12 +100,10 @@ public class SharedWorldSpawner : MonoBehaviour, INetworkRunnerCallbacks
 
     private void TrySpawnSharedObjects(NetworkRunner runner)
     {
-        // Shared mode: samo prvi u sobi spawna (PlayerCount==1)
-        int playerCount = 0;
-        if (runner.SessionInfo.IsValid)
-            playerCount = runner.SessionInfo.PlayerCount;
+        // U Shared modu spawna samo master client
+        bool shouldSpawn = runner.GameMode == GameMode.Shared ? runner.IsSharedModeMasterClient : runner.IsServer;
+        Debug.Log($"[SharedWorldSpawner] TrySpawnSharedObjects | shouldSpawn={shouldSpawn} | Mode={runner.GameMode} | IsSharedMaster={runner.IsSharedModeMasterClient}");
 
-        bool shouldSpawn = runner.GameMode != GameMode.Shared ? runner.IsServer : (playerCount == 1);
         if (!shouldSpawn) return;
 
         // 1) Heatmap marker
@@ -128,6 +131,20 @@ public class SharedWorldSpawner : MonoBehaviour, INetworkRunnerCallbacks
             {
                 _spawnedAimState = runner.Spawn(sharedAimCanvasStatePrefab, Vector3.zero, Quaternion.identity, inputAuthority: null);
                 Debug.Log("[SharedWorldSpawner] Spawned SharedAimCanvasState.");
+            }
+        }
+
+        // 3) NEW: Shared noise canvas state
+        if (_spawnedNoiseState == null && !NoiseStateAlreadyExists())
+        {
+            if (sharedNoiseCanvasStatePrefab == null)
+            {
+                Debug.LogError("[SharedWorldSpawner] sharedNoiseCanvasStatePrefab nije postavljen!");
+            }
+            else
+            {
+                _spawnedNoiseState = runner.Spawn(sharedNoiseCanvasStatePrefab, Vector3.zero, Quaternion.identity, inputAuthority: null);
+                Debug.Log("[SharedWorldSpawner] Spawned SharedNoiseCanvasState.");
             }
         }
     }
