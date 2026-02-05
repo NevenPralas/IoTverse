@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Collections.Concurrent;
 using System.Linq;
@@ -6,10 +6,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Net;
 using System.Net.Http;
-using System.Net.Security;
-using System.Security.Cryptography.X509Certificates;
 using UnityEngine;
 using UnityEngine.Networking;
+using UnityEngine.UI;
 using XCharts.Runtime;
 using SimpleJSON;
 using System.Collections.ObjectModel;
@@ -17,47 +16,75 @@ using System.Collections.ObjectModel;
 
 public class NoiseManager : MonoBehaviour
 {
+    [Header("Spheres")]
     [SerializeField] private NoiseSphere[] spheres;
+
+    [Header("Polling")]
     [SerializeField] private int pollIntervalMs = 500;
     [SerializeField] private int maxBufferedPoints = 256;
 
-    private INoiseDataProvider noiseDataProvider;
-    private int activeSensorIndex;
-    // XChart
+    [Header("Chart")]
     [SerializeField] public LineChart lineChart;
 
-    // Button to start simulation
-    [SerializeField] private UnityEngine.UI.Button startButton;
+    [Header("UI (optional, for auto-wiring)")]
+    [Tooltip("S1-S4 toggles (sphere visibility)")]
+    [SerializeField] private Toggle[] sphereToggles; // length 4 (optional)
+    [Tooltip("Sensor1-Sensor4 toggles (graph selection). Optional.")]
+    [SerializeField] private Toggle[] sensorToggles; // length 4 (optional) - NOTE: ti imaš BUTTON, ne toggle
+    [SerializeField] private Toggle mockDataToggle;  // optional
+    [SerializeField] private Button startButton;     // not used but kept
 
-    private List<List<NoiseData>> currentSensorsData; // List of data for each sensor
-
-    private int currentSensorDisplayIndex = 0;
-
-    private int numSensors = 4;
-
+    [Header("Noise range")]
     public float minDecibels = 30f;
     public float maxDecibels = 100f;
 
-    // List of queues for each sensor
+    private int numSensors = 4;
+
+    [Header("Mode")]
+    public bool onlyLiveData = true;
+
+    private INoiseDataProvider noiseDataProvider;
+    private int activeSensorIndex;
+    private int currentSensorDisplayIndex = 0;
+
+    private List<List<NoiseData>> currentSensorsData;
+
     private Queue<(NoiseData data, int sensorIndex)> incomingNoiseQueue = new Queue<(NoiseData data, int sensorIndex)>();
+    private Thread fetcherThread;
+    private bool isFetcherThreadRunning = false;
 
     // Main-thread pacing state
     private bool hasSync = false;
 
     private long startTimeMillisec;
 
-    public bool onlyLiveData = true;
-
     private long lastRemoteTimestamp = 0;
-    private float lastLocalTimeSec = 0f;       // Unity realtime when last sample applied
-    private bool isFetcherCoroutineRunning = true;
-    private int fetchLatestCount = 10; // Number of latest data points to fetch per request
-    // Graph data tracking
-    private List<(long timestamp, string label)> graphTimestamps = new List<(long, string)>();
-    private const long graphRetentionMs = 30000; // 30 seconds
 
-    // MockDataToggle element
-    [SerializeField] public UnityEngine.UI.Toggle mockDataToggle;
+    private bool isFetcherCoroutineRunning = true;
+    // Graph data tracking
+    private float lastLocalTimeSec = 0f;
+
+    private int fetchLatestCount = 30;
+
+    // Graph retention
+    private List<(long timestamp, string label)> graphTimestamps = new List<(long, string)>();
+    private const long graphRetentionMs = 30000;
+
+    // --- NETWORK STATE BRIDGE ---
+    private SharedNoiseCanvasState sharedState;
+
+    // Thread-safe flag (fetcher thread MUST NOT touch Unity Toggle)
+    private volatile bool _mockOnThreadSafe = false;
+
+    // Cache for sphere actives (main thread apply)
+    private bool[] _sphereActive = new bool[4] { true, true, true, true };
+
+    private void Awake()
+    {
+        // Nemoj se oslanjati na Awake jer state često još nije spawnan.
+        // Samo pokušaj, ali imamo EnsureSharedState() svugdje gdje treba.
+        sharedState = FindObjectOfType<SharedNoiseCanvasState>(true);
+    }
 
     private void Start()
     {
@@ -69,14 +96,15 @@ public class NoiseManager : MonoBehaviour
             return;
         }
 
-        // Initialize currentSensorsData with a list for each sensor
+        // Init per-sensor buffers
         currentSensorsData = new List<List<NoiseData>>();
         for (int i = 0; i < spheres.Length; i++)
-        {
             currentSensorsData.Add(new List<NoiseData>());
-        }
 
         InitializeChart();
+
+        // Auto-wire UI (OPTIONAL) - koristi samo ako si stvarno popunio reference u inspectoru.
+        WireUIIfAssigned();
 
         // Initialize queue
         incomingNoiseQueue = new Queue<(NoiseData data, int sensorIndex)>();
@@ -86,12 +114,166 @@ public class NoiseManager : MonoBehaviour
 
     }
 
+    private void WireUIIfAssigned()
+    {
+        // Ako koristiš NoiseUIBridge i evente spajaš na njega, onda NE puni ova polja
+        // i ovo se neće ništa attachati.
+
+        if (sphereToggles != null && sphereToggles.Length >= 4)
+        {
+            for (int i = 0; i < 4; i++)
+            {
+                int idx = i;
+                if (sphereToggles[idx] == null) continue;
+                sphereToggles[idx].onValueChanged.AddListener((on) => OnSphereToggleChanged(idx, on));
+            }
+        }
+
+        // Ovo je za slučaj da su Sensor1-4 TOGGLES. Ti imaš BUTTONe pa ti ne treba.
+        if (sensorToggles != null && sensorToggles.Length >= 4)
+        {
+            for (int i = 0; i < 4; i++)
+            {
+                int idx = i;
+                if (sensorToggles[idx] == null) continue;
+                sensorToggles[idx].onValueChanged.AddListener((on) =>
+                {
+                    if (on) OnSensorSelected(idx);
+                });
+            }
+        }
+
+        if (mockDataToggle != null)
+        {
+            mockDataToggle.onValueChanged.AddListener(OnMockToggleChanged);
+        }
+    }
+
     private void OnDestroy()
     {
         // Stop the fetcher coroutine safely
         isFetcherCoroutineRunning = false;
     }
 
+    // ---------------------------
+    // Shared state lazy-find
+    // ---------------------------
+    private bool EnsureSharedState()
+    {
+        if (sharedState != null) return true;
+        sharedState = FindObjectOfType<SharedNoiseCanvasState>(true);
+        return sharedState != null;
+    }
+
+    // ---------------------------
+    // UI -> NETWORK requests
+    // ---------------------------
+    public void OnSphereToggleChanged(int sphereIndex, bool on)
+    {
+        EnsureSharedState();
+
+        if (sharedState != null)
+            sharedState.RequestSetSphere(sphereIndex, on);
+        else
+            SetSphereActiveLocal(sphereIndex, on);
+    }
+
+    // Ako ti Buttoni i dalje zovu DrawSensorData(int), ovo je kompatibilno
+    public void DrawSensorData(int sensorIndex)
+    {
+        OnSensorSelected(sensorIndex);
+    }
+
+    // Preporuka: Buttoni zovu ovu metodu (OnClick)
+    public void OnSensorSelected(int sensorIndex)
+    {
+        sensorIndex = Mathf.Clamp(sensorIndex, 0, 3);
+        EnsureSharedState();
+
+        if (sharedState != null)
+            sharedState.RequestSetActiveSensor(sensorIndex);
+        else
+            ApplyGraphSensorLocal(sensorIndex);
+    }
+
+    public void OnMockToggleChanged(bool on)
+    {
+        EnsureSharedState();
+
+        if (sharedState != null)
+            sharedState.RequestSetMock(on);
+        else
+            _mockOnThreadSafe = on;
+    }
+
+    // ---------------------------
+    // NETWORK -> LOCAL apply
+    // Called by SharedNoiseCanvasState every Render when state changes
+    // ---------------------------
+    public void ApplyNetworkState(bool sphere0, bool sphere1, bool sphere2, bool sphere3, int activeSensorIndex, bool mockOn)
+    {
+        // spheres
+        SetSphereActiveLocal(0, sphere0);
+        SetSphereActiveLocal(1, sphere1);
+        SetSphereActiveLocal(2, sphere2);
+        SetSphereActiveLocal(3, sphere3);
+
+        // mock
+        _mockOnThreadSafe = mockOn;
+
+        // graph selection
+        ApplyGraphSensorLocal(activeSensorIndex);
+
+        // keep UI in sync locally (ONLY if you assigned these refs)
+        if (sphereToggles != null && sphereToggles.Length >= 4)
+        {
+            if (sphereToggles[0] != null) sphereToggles[0].SetIsOnWithoutNotify(sphere0);
+            if (sphereToggles[1] != null) sphereToggles[1].SetIsOnWithoutNotify(sphere1);
+            if (sphereToggles[2] != null) sphereToggles[2].SetIsOnWithoutNotify(sphere2);
+            if (sphereToggles[3] != null) sphereToggles[3].SetIsOnWithoutNotify(sphere3);
+        }
+
+        if (mockDataToggle != null)
+            mockDataToggle.SetIsOnWithoutNotify(mockOn);
+
+        if (sensorToggles != null && sensorToggles.Length >= 4)
+        {
+            for (int i = 0; i < 4; i++)
+                if (sensorToggles[i] != null)
+                    sensorToggles[i].SetIsOnWithoutNotify(i == Mathf.Clamp(activeSensorIndex, 0, 3));
+        }
+    }
+
+    private void SetSphereActiveLocal(int sphereIndex, bool active)
+    {
+        if (sphereIndex < 0 || sphereIndex >= spheres.Length) return;
+
+        _sphereActive[sphereIndex] = active;
+
+        if (spheres[sphereIndex] != null)
+            spheres[sphereIndex].gameObject.SetActive(active);
+    }
+
+    private void ApplyGraphSensorLocal(int sensorIndex)
+    {
+        sensorIndex = Mathf.Clamp(sensorIndex, 0, Mathf.Max(0, currentSensorsData.Count - 1));
+        if (sensorIndex == currentSensorDisplayIndex) return;
+
+        currentSensorDisplayIndex = sensorIndex;
+        List<NoiseData> sensorData = currentSensorsData[sensorIndex];
+        DrawGraphPoints(sensorData);
+
+        if (lineChart != null)
+        {
+            var title = lineChart.GetChartComponent<Title>();
+            if (title != null) title.text = $"Noise Loudness - Sensor {sensorIndex + 1}";
+            lineChart.RefreshChart();
+        }
+    }
+
+    // ---------------------------
+    // Main Update (graph + spheres)
+    // ---------------------------
     private void Update()
     {
         float nowSec = Time.realtimeSinceStartup;
@@ -113,10 +295,10 @@ public class NoiseManager : MonoBehaviour
             // Store data for all sensors (for later display switching)
             currentSensorsData[sensorIndex].Add(data);
 
+
             if (sensorIndex == currentSensorDisplayIndex)
-            {
                 AddSampleToGraph(data);
-            }
+
             hasSync = true;
             lastRemoteTimestamp = data.timestamp;
             lastLocalTimeSec = nowSec;
@@ -140,11 +322,8 @@ public class NoiseManager : MonoBehaviour
             currentSensorsData[sensorIndex].RemoveAll(d => d.timestamp < cutoffTime);
 
             if (sensorIndex == currentSensorDisplayIndex)
-            {
                 AddSampleToGraph(data);
-            }
 
-            // Advance anchors by the remote delta to preserve pacing
             lastRemoteTimestamp = data.timestamp;
             lastLocalTimeSec += remoteDeltaMs / 1000f;
         }
@@ -210,7 +389,9 @@ public class NoiseManager : MonoBehaviour
         }
     }
 
-
+    // ---------------------------
+    // Chart helpers
+    // ---------------------------
     private void InitializeChart()
     {
         if (lineChart == null)
@@ -221,49 +402,25 @@ public class NoiseManager : MonoBehaviour
 
         lineChart.ClearData();
         if (lineChart.series.Count == 0)
-        {
-            var serie = lineChart.AddSerie<Line>("Noise Frequency");
-            // serie.symbol.show = true;
-            // serie.symbol.type = SymbolType.Circle;
-        }
-    }
-
-    public void DrawSensorData(int sensorIndex)
-    {
-        Debug.LogWarning("DrawSensorData called....................................................");
-        if (sensorIndex < 0 || sensorIndex >= currentSensorsData.Count)
-        {
-            Debug.LogError("Invalid sensor index or no data available.");
-            return;
-        }
-
-        if (sensorIndex == currentSensorDisplayIndex) return; // No change
-
-        currentSensorDisplayIndex = sensorIndex;
-        List<NoiseData> sensorData = currentSensorsData[sensorIndex];
-        DrawGraphPoints(sensorData);
-
-        // Change graph title to indicate sensor
-        lineChart.GetChartComponent<Title>().text = $"Noise Loudness - Sensor {sensorIndex + 1}";
-        lineChart.RefreshChart();
+            lineChart.AddSerie<Line>("Noise Frequency");
     }
 
     private void DrawGraphPoints(List<NoiseData> data)
     {
-        Debug.Log("Drawing graph points in NoiseManager...............................................");
-        if (lineChart != null)
+        if (lineChart == null)
         {
-            // Clear existing data
-            lineChart.ClearData();
+            Debug.LogError("LineChart reference is not set in NoiseManager!");
+            return;
+        }
 
-            // Ensure we have a Line serie (only add if not already present)
-            if (lineChart.series.Count == 0)
-            {
-                var serie = lineChart.AddSerie<Line>("Noise Loudness");
-                // Enable symbols (dots) on the line
-                serie.symbol.show = true;
-                serie.symbol.type = SymbolType.Circle;
-            }
+        lineChart.ClearData();
+
+        if (lineChart.series.Count == 0)
+        {
+            var serie = lineChart.AddSerie<Line>("Noise Loudness");
+            serie.symbol.show = true;
+            serie.symbol.type = SymbolType.Circle;
+        }
 
             // Add data points
             for (int i = 0; i < data.Count; i++)
@@ -275,94 +432,78 @@ public class NoiseManager : MonoBehaviour
                 lineChart.AddData(0, roundedDecibels);
             }
 
-            lineChart.RefreshChart();
-        }
-        else
-        {
-            Debug.LogError("LineChart reference is not set in NoiseManager!");
-        }
+        lineChart.RefreshChart();
     }
 
     private void AddSampleToGraph(NoiseData sample)
     {
-        if (lineChart != null)
+        if (lineChart == null) return;
+        
+        string label = FormatTimestamp(sample.timestamp);
+        lineChart.AddXAxisData(label);
+        float roundedDecibels = Mathf.Round(sample.decibels * 10f) / 10f;
+        lineChart.AddData(0, roundedDecibels);
+
+        currentSensorsData[currentSensorDisplayIndex].Add(sample);
+
+        // Track timestamps
+        graphTimestamps.Add((sample.timestamp, label));
+
+        // Remove data points older than 30 seconds
+        long cutoffTime = sample.timestamp - graphRetentionMs;
+        int removeCount = 0;
+
+        for (int i = 0; i < graphTimestamps.Count; i++)
         {
-            string label = FormatTimestamp(sample.timestamp);
-            lineChart.AddXAxisData(label);
-            float roundedDecibels = Mathf.Round(sample.decibels * 10f) / 10f;
-            lineChart.AddData(0, roundedDecibels);
-
-            currentSensorsData[currentSensorDisplayIndex].Add(sample);
-
-            // Track timestamps
-            graphTimestamps.Add((sample.timestamp, label));
-
-            // Remove data points older than 30 seconds
-            long cutoffTime = sample.timestamp - graphRetentionMs;
-            int removeCount = 0;
-
-            for (int i = 0; i < graphTimestamps.Count; i++)
-            {
-                if (graphTimestamps[i].timestamp < cutoffTime)
-                {
-                    removeCount++;
-                }
-                else
-                {
-                    break; // timestamps are sorted, so we can stop
-                }
-            }
-
-            // Remove old data points from chart and tracking list
-            for (int i = 0; i < removeCount; i++)
-            {
-                if (lineChart.series.Count > 0)
-                {
-                    lineChart.series[0].RemoveData(0); // Remove oldest data point from series 0
-                }
-
-                // Remove oldest x-axis label
-                var xAxis = lineChart.GetChartComponent<XCharts.Runtime.XAxis>(0);
-                if (xAxis != null && xAxis.data.Count > 0)
-                {
-                    xAxis.RemoveData(0);
-                }
-            }
-
-            // Remove from tracking list
-            if (removeCount > 0)
-            {
-                graphTimestamps.RemoveRange(0, removeCount);
-
-                // Also remove from currentSensorsData for the current display sensor
-                if (currentSensorDisplayIndex >= 0 && currentSensorDisplayIndex < currentSensorsData.Count)
-                {
-                    int currentDataCount = currentSensorsData[currentSensorDisplayIndex].Count;
-                    if (removeCount <= currentDataCount)
-                    {
-                        currentSensorsData[currentSensorDisplayIndex].RemoveRange(0, removeCount);
-                    }
-                }
-            }
-
-            lineChart.RefreshChart();
+            if (graphTimestamps[i].timestamp < cutoffTime)
+                removeCount++;
+            else break; // timestamps are sorted, so we can stop
         }
+
+        // Remove old data points from chart and tracking list
+        for (int i = 0; i < removeCount; i++)
+        {
+            if (lineChart.series.Count > 0)
+                lineChart.series[0].RemoveData(0); // Remove oldest data point from series 0
+
+            // Remove oldest x-axis label
+            var xAxis = lineChart.GetChartComponent<XCharts.Runtime.XAxis>(0);
+            if (xAxis != null && xAxis.data.Count > 0)
+                xAxis.RemoveData(0);
+        
+        }
+
+        // Remove from tracking list
+        if (removeCount > 0)
+        {
+            graphTimestamps.RemoveRange(0, removeCount);
+
+            // Also remove from currentSensorsData for the current display sensor
+            if (currentSensorDisplayIndex >= 0 && currentSensorDisplayIndex < currentSensorsData.Count)
+            {
+                int currentDataCount = currentSensorsData[currentSensorDisplayIndex].Count;
+                if (removeCount <= currentDataCount)
+                    currentSensorsData[currentSensorDisplayIndex].RemoveRange(0, removeCount);
+            }
+        }
+
+        lineChart.RefreshChart();
     }
 
+    // ---------------------------
+    // Sphere apply
+    // ---------------------------
     private void ApplySampleToSpheres(NoiseData sample, int sensorIndex)
     {
-        // float minDecibels = currentSensorsData.Min(d => d.decibels);
-        // float maxDecibels = currentSensorsData.Max(d => d.decibels);
-        float radius = MapDecibelsToRadius(sample.decibels, minDecibels, maxDecibels);
-        Debug.Log($"Applying sample to sphere {sensorIndex}: Decibels={sample.decibels}, Radius={radius}");
-        spheres[sensorIndex].SetRadius(radius);
+        if (sensorIndex < 0 || sensorIndex >= spheres.Length) return;
+        if (!_sphereActive[sensorIndex]) return;
 
-        Debug.Log($"Timestamp: {sample.timestamp}, Frequency: {sample.decibels}, Radius: {radius}");
+        float radius = MapDecibelsToRadius(sample.decibels, minDecibels, maxDecibels);
+        spheres[sensorIndex].SetRadius(radius);
     }
 
     private float MapDecibelsToRadius(float decibels, float minDecibels, float maxDecibels)
     {
-        // Mapiramo decibele na radijus između 0.2 i 1.0
         float minRadius = 0.2f;
         float maxRadius = 0.7f;
         return Mathf.Lerp(minRadius, maxRadius, (decibels - minDecibels) / (maxDecibels - minDecibels));
@@ -431,7 +572,6 @@ public class NoiseManager : MonoBehaviour
 
             foreach (JSONNode deviceNode in root.AsArray)
             {
-                // Navigate: device -> gateway node -> sensor node -> timestamps
                 foreach (var gwKey in deviceNode.Keys)
                 {
                     if (gwKey == "deviceId") continue;
@@ -470,12 +610,15 @@ public class NoiseManager : MonoBehaviour
         return result.ToArray();
     }
 
-    // Generate mock noise data with realistic wave patterns and sensor-specific phases
+    // ---------------------------
+    // Mock data
+    // ---------------------------
     private NoiseData[] generateMockData(int sensorIndex)
     {
         int dataPointCount = 5;
         List<NoiseData> dataPoints = new List<NoiseData>();
         long currentTime = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
 
         // Sensor-specific phase offset
         float phaseOffset = sensorIndex * (2f * Mathf.PI / Mathf.Max(1, spheres.Length));
@@ -491,32 +634,24 @@ public class NoiseManager : MonoBehaviour
             dataPoints.Add(new NoiseData(timestamp, decibels));
         }
 
+
         return dataPoints.ToArray();
     }
 
     private float GenerateWaveNoiseDecibels(long timestamp, float phaseOffset, System.Random random)
     {
-        // Create a realistic pattern using sine/cosine waves with multiple frequencies
         float baseValue = (minDecibels + maxDecibels) * 0.5f;
         float range = (maxDecibels - minDecibels) * 0.4f;
 
-        // Use relative time from start (in seconds) for proper period calculation
         float relativeTimeSeconds = (timestamp - startTimeMillisec) / 1000f;
 
-        // Primary wave: 20 second period with sensor-specific phase
         float primaryWave = Mathf.Sin((relativeTimeSeconds * 2f * Mathf.PI / 20f) + phaseOffset) * range;
-
-        // Secondary wave: 5 second period for more variation
         float secondaryWave = Mathf.Sin((relativeTimeSeconds * 2f * Mathf.PI / 5f) + phaseOffset * 0.5f) * range * 0.5f;
 
-        // Add random noise (30% of the range)
         float noiseAmount = range * 0.3f;
         float randomNoise = (float)(random.NextDouble() * 2 - 1) * noiseAmount;
 
-        // Combine all components
         float decibels = baseValue + primaryWave + secondaryWave + randomNoise;
-
-        // Clamp to valid range
         return Mathf.Clamp(decibels, minDecibels, maxDecibels);
     }
 }
