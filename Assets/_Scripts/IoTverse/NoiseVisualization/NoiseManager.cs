@@ -35,7 +35,7 @@ public class NoiseManager : MonoBehaviour
     [SerializeField] private Button startButton;     // not used but kept
 
     [Header("Noise range")]
-    public float minDecibels = 30f;
+    public float minDecibels = 0f;
     public float maxDecibels = 100f;
 
     private int numSensors = 4;
@@ -61,12 +61,10 @@ public class NoiseManager : MonoBehaviour
     private long lastRemoteTimestamp = 0;
 
     private bool isFetcherCoroutineRunning = true;
-    // Graph data tracking
     private float lastLocalTimeSec = 0f;
 
-    private int fetchLatestCount = 30;
+    private int fetchLatestCount = 8;
 
-    // Graph retention
     private List<(long timestamp, string label)> graphTimestamps = new List<(long, string)>();
     private const long graphRetentionMs = 30000;
 
@@ -495,8 +493,13 @@ public class NoiseManager : MonoBehaviour
     // ---------------------------
     private void ApplySampleToSpheres(NoiseData sample, int sensorIndex)
     {
-        if (sensorIndex < 0 || sensorIndex >= spheres.Length) return;
         if (!_sphereActive[sensorIndex]) return;
+
+        // Get min and max decibel range from currentSensorsData
+        float minDecibels = currentSensorsData[sensorIndex].Count > 0 ?
+            currentSensorsData[sensorIndex].Min(d => d.decibels) : 0f;
+        float maxDecibels = currentSensorsData[sensorIndex].Count > 0 ?
+            currentSensorsData[sensorIndex].Max(d => d.decibels) : 100f;
 
         float radius = MapDecibelsToRadius(sample.decibels, minDecibels, maxDecibels);
         spheres[sensorIndex].SetRadius(radius);
