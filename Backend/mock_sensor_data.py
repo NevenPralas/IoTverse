@@ -13,7 +13,7 @@ from datetime import datetime
 BASE_URL = "http://localhost:8080"
 # BASE_URL = "http://172.20.10.5:8080/"
 SENSOR_IDS = [1, 2, 3, 4]
-SEND_INTERVAL = 1
+SEND_INTERVAL = 5
 
 BASE_TEMPS = {
     1: 22.0,  # Room temperature
@@ -67,11 +67,11 @@ def send_temperature(sensor_id, temperature):
     try:
         response = requests.post(url, json=payload, timeout=5)
         if response.status_code == 200:
-            print(f"✓ Sensor {sensor_id} - Temperature: {temperature}°C")
+            print(f"Sensor {sensor_id} - Temperature: {temperature}°C")
         else:
-            print(f"✗ Sensor {sensor_id} - Error: {response.status_code}")
+            print(f"Sensor {sensor_id} - Error: {response.status_code}")
     except requests.exceptions.RequestException as e:
-        print(f"✗ Sensor {sensor_id} - Connection error: {e}")
+        print(f"Sensor {sensor_id} - Connection error: {e}")
 
 
 def send_noise(sensor_id, noise_level):
@@ -82,11 +82,11 @@ def send_noise(sensor_id, noise_level):
     try:
         response = requests.post(url, json=payload, timeout=5)
         if response.status_code == 200:
-            print(f"✓ Sensor {sensor_id} - Noise: {noise_level} dB")
+            print(f"Sensor {sensor_id} - Noise: {noise_level} dB")
         else:
-            print(f"✗ Sensor {sensor_id} - Error: {response.status_code}")
+            print(f"Sensor {sensor_id} - Error: {response.status_code}")
     except requests.exceptions.RequestException as e:
-        print(f"✗ Sensor {sensor_id} - Connection error: {e}")
+        print(f"Sensor {sensor_id} - Connection error: {e}")
 
 
 def main():

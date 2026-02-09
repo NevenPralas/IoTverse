@@ -225,7 +225,7 @@ def generate_and_save_data(sensor_ids, days, interval_seconds, verbose=False):
         data = db.get_recent_temperature_data(sensor_id, limit=10000)
         print(f"  Sensor {sensor_id}: {len(data):,} temperature readings")
     
-    print(f"\n✅ Training data generation complete!")
+    print(f"\nTraining data generation complete!")
     print(f"{'='*70}\n")
 
 
@@ -282,25 +282,25 @@ Examples:
     
     # Validate arguments
     if args.days <= 0:
-        print("❌ Error: Days must be positive")
+        print("Error: Days must be positive")
         return
     
     if args.interval <= 0:
-        print("❌ Error: Interval must be positive")
+        print("Error: Interval must be positive")
         return
     
     if not args.sensors:
-        print("❌ Error: At least one sensor ID required")
+        print("Error: At least one sensor ID required")
         return
     
     # Initialize database
-    print("🗄️  Initializing database...")
+    print("Initializing database...")
     db.init_database()
-    print("✓ Database ready")
+    print("Database ready")
     
     # Clear data if requested
     if args.clear:
-        print("\n⚠️  WARNING: Clearing all existing data!")
+        print("\nWARNING: Clearing all existing data!")
         response = input("Are you sure? (yes/no): ")
         if response.lower() == 'yes':
             import sqlite3
@@ -310,7 +310,7 @@ Examples:
             cursor.execute("DELETE FROM noise_readings")
             conn.commit()
             conn.close()
-            print("✓ Existing data cleared")
+            print("Existing data cleared")
         else:
             print("Cancelled - keeping existing data")
     
@@ -323,9 +323,9 @@ Examples:
             verbose=args.verbose
         )
     except KeyboardInterrupt:
-        print("\n\n⚠️  Generation interrupted by user")
+        print("\n\nGeneration interrupted by user")
     except Exception as e:
-        print(f"\n❌ Error during generation: {e}")
+        print(f"\nError during generation: {e}")
         import traceback
         traceback.print_exc()
 

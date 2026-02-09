@@ -75,7 +75,7 @@ def ensure_models_directory():
     """Ensure the models directory exists"""
     if not os.path.exists(MODELS_DIR):
         os.makedirs(MODELS_DIR)
-        print(f"✓ Created models directory: {MODELS_DIR}")
+        print(f"Created models directory: {MODELS_DIR}")
 
 
 def prepare_sequences(data, seq_length=60):
@@ -145,13 +145,13 @@ def save_model(model, sensor_id, mean, std, val_loss, hyperparams):
         with open(metadata_path, 'w') as f:
             json.dump(metadata, f, indent=2)
 
-        print(f"  ✓ Model saved: {model_path}")
-        print(f"  ✓ Metadata saved: {metadata_path}")
+        print(f"  Model saved: {model_path}")
+        print(f"  Metadata saved: {metadata_path}")
         if val_loss is not None:
-            print(f"  ✓ Validation Loss: {val_loss:.6f}")
+            print(f"  Validation Loss: {val_loss:.6f}")
         return True
     except Exception as e:
-        print(f"  ❌ Error saving model: {e}")
+        print(f"  Error saving model: {e}")
         return False
 
 
@@ -170,38 +170,38 @@ def train_model(sensor_id, max_epochs=100, verbose=False):
     print(f"{'='*70}")
 
     # Fetch data
-    print(f"📊 Fetching data...")
+    print(f"Fetching data...")
     data = db.get_recent_temperature_data(sensor_id, limit=500)
     
     if len(data) < REQ_DATA_POINTS:
-        print(f"❌ Not enough data: {len(data)} points (need {REQ_DATA_POINTS})")
+        print(f"Not enough data: {len(data)} points (need {REQ_DATA_POINTS})")
         return False
 
-    print(f"✓ Found {len(data)} data points")
+    print(f"Found {len(data)} data points")
 
     # Split data
     split_idx = int(len(data) * 0.8)
     train_data = data[:split_idx]
     val_data = data[split_idx:]
     
-    print(f"✓ Split: {len(train_data)} training, {len(val_data)} validation")
+    print(f"Split: {len(train_data)} training, {len(val_data)} validation")
 
     # Prepare sequences
-    print(f"🔄 Preparing sequences (length={SEQUENCE_SIZE})...")
+    print(f"Preparing sequences (length={SEQUENCE_SIZE})...")
     train_result = prepare_sequences(train_data, SEQUENCE_SIZE)
     if train_result is None:
-        print(f"❌ Cannot prepare training sequences")
+        print(f"Cannot prepare training sequences")
         return False
 
     X_train, y_train, mean, std = train_result
 
     val_result = prepare_sequences(val_data, SEQUENCE_SIZE)
     if val_result is None:
-        print(f"⚠️  Not enough validation data, using training data only")
+        print(f"Not enough validation data, using training data only")
         X_val, y_val = None, None
     else:
         X_val, y_val, _, _ = val_result
-        print(f"✓ Created {len(X_train)} training sequences, {len(X_val)} validation sequences")
+        print(f"Created {len(X_train)} training sequences, {len(X_val)} validation sequences")
 
     # Convert to tensors
     X_train_tensor = torch.FloatTensor(X_train)
@@ -212,7 +212,7 @@ def train_model(sensor_id, max_epochs=100, verbose=False):
         y_val_tensor = torch.FloatTensor(y_val).unsqueeze(-1)
 
     # Create model
-    print(f"🏗️  Building model...")
+    print(f"    Building model...")
     print(f"  - Input size: 3 (temp, diff, moving_avg)")
     print(f"  - Hidden size: {HIDDEN_SIZE}")
     print(f"  - Layers: {NUM_LAYERS}")
@@ -246,7 +246,7 @@ def train_model(sensor_id, max_epochs=100, verbose=False):
 
     batch_size = 16
     
-    print(f"\n🎯 Starting training (max {max_epochs} epochs)...")
+    print(f"\nStarting training (max {max_epochs} epochs)...")
     print(f"{'─'*70}")
 
     for epoch in range(max_epochs):
@@ -309,8 +309,8 @@ def train_model(sensor_id, max_epochs=100, verbose=False):
 
         # Early stopping
         if patience_counter >= max_patience:
-            print(f"\n🛑 Early stopping at epoch {epoch + 1}")
-            print(f"✓ Best validation loss: {best_val_loss:.6f}")
+            print(f"\nEarly stopping at epoch {epoch + 1}")
+            print(f"Best validation loss: {best_val_loss:.6f}")
             break
 
     # Restore best model
@@ -321,7 +321,7 @@ def train_model(sensor_id, max_epochs=100, verbose=False):
     model.eval()
 
     # Calculate final metrics
-    print(f"\n📈 Final Metrics:")
+    print(f"\n  Final Metrics:")
     print(f"  - Best validation loss: {best_val_loss:.6f}")
     print(f"  - Final training loss: {avg_train_loss:.6f}")
     print(f"  - Epochs trained: {epoch + 1}")
@@ -337,7 +337,7 @@ def train_model(sensor_id, max_epochs=100, verbose=False):
     success = save_model(model, sensor_id, mean, std, best_val_loss, hyperparams)
     
     if success:
-        print(f"\n✅ Training completed successfully for sensor {sensor_id}")
+        print(f"\nTraining completed successfully for sensor {sensor_id}")
     
     return success
 
@@ -417,9 +417,9 @@ Examples:
     ensure_models_directory()
 
     # Initialize database
-    print(f"\n🗄️  Initializing database...")
+    print(f"\nInitializing database...")
     db.init_database()
-    print(f"✓ Database ready")
+    print(f"Database ready")
 
     # Train each sensor
     results = {}
@@ -449,7 +449,7 @@ Examples:
     
     print(f"\nResults:")
     for sensor_id, result in results.items():
-        status = "✅ Success" if result['success'] else "❌ Failed"
+        status = "Success" if result['success'] else "❌ Failed"
         duration_str = f"{result['duration']:.1f}s"
         print(f"  Sensor {sensor_id}: {status} ({duration_str})")
     
@@ -459,11 +459,11 @@ Examples:
     print(f"  Total time: {total_duration:.1f}s")
     
     if successful == len(results):
-        print(f"\n🎉 All models trained successfully!")
+        print(f"\nAll models trained successfully!")
     elif successful > 0:
-        print(f"\n⚠️  Some models failed to train")
+        print(f"\nSome models failed to train")
     else:
-        print(f"\n❌ All models failed to train")
+        print(f"\nAll models failed to train")
     
     print("\n" + "=" * 70)
 

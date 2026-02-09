@@ -12,6 +12,8 @@ import json
 import db
 import urllib3
 
+from threading import Thread
+
 
 # ===== CONSTANTS ==============================================================
 DATA_JEDI_URL = "https://djx.entlab.hr/m2m/trusted/data"
@@ -547,19 +549,16 @@ def receive_temperature(sensor_id):
     data = request.get_json()
     print(f"Received temperature from sensor {sensor_id}: {data}")
     temp_value = data.get("temperature")
-
     if temp_value is None:
         return jsonify({"error": "Missing temperature value"}), 400
-
     timestamp = datetime.datetime.now(datetime.UTC).replace(microsecond=0).isoformat()
     db.save_temperature_reading(sensor_id, temp_value, timestamp)
-
     payload = {
         "source": {
             "operator": os.getenv("OPERATOR_ID"),
             "domainApplication": os.getenv("DOMAIN_APP_ID"),
             "user": os.getenv("USER_ID"),
-            "res": f"dipProj25_temperature{sensor_id}"
+            "resource": f"dipProj25_temperature{sensor_id}"
         },
         "contentNodes": [
             {
@@ -569,9 +568,22 @@ def receive_temperature(sensor_id):
         ]
     }
 
-    r = requests.post(DATA_JEDI_URL, json=payload, headers=HEADERS, verify=False)
-    generate_and_send_prediction(sensor_id)
+    # Add debugging
+    print(f"Sending to DATA_JEDI_URL: {DATA_JEDI_URL}")
+    print(f"Payload: {payload}")
+
+    try:
+        r = requests.post(DATA_JEDI_URL, json=payload, headers=HEADERS, verify=False, timeout=10)
+        print(f"Response status: {r.status_code}")
+        print(f"Response body: {r.text}")
+        r.raise_for_status()  # Raises exception for 4xx/5xx status codes
+    except Exception as e:
+        print(f"Error sending to DATA_JEDI: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+    Thread(target=generate_and_send_prediction, args=(sensor_id,), daemon=True).start()
     return jsonify({"status": "ok", "platform_code": r.status_code})
+
 
 
 @app.route("/sensors/noisedetector/<sensor_id>", methods=["POST"])
