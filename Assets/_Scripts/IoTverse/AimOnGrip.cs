@@ -4,6 +4,9 @@ using UnityEngine;
 
 public class AimOnGrip : MonoBehaviour
 {
+    [Header("Debug")]
+    [SerializeField] private bool debugLogs = true;
+
     [Header("References")]
     [SerializeField] private GameObject aimObject;
     [SerializeField] private Transform rightHandAnchor;
@@ -42,52 +45,90 @@ public class AimOnGrip : MonoBehaviour
     private bool isVisible = false;
     private bool flashing = false;
 
-    // UI text reference (ostaje)
     public GameObject text;
-
     private SharedAimCanvasState sharedState;
+
+    void Log(string msg)
+    {
+        if (debugLogs)
+            Debug.Log("[AimOnGrip] " + msg);
+    }
 
     void Start()
     {
+        Log("Start() called.");
+
         if (aimObject != null)
         {
             aimObject.SetActive(true);
             aimObject.transform.localScale = hiddenScale;
+            Log("Aim object initialized.");
+
             if (defaultAimMaterial == null)
             {
                 Renderer r = aimObject.GetComponent<Renderer>();
-                if (r != null) defaultAimMaterial = r.material;
+                if (r != null)
+                {
+                    defaultAimMaterial = r.material;
+                    Log("Default aim material cached.");
+                }
             }
+        }
+        else
+        {
+            Debug.LogError("[AimOnGrip] AimObject is NULL!");
         }
 
         if (rightHandAnchor == null)
         {
             var r = GameObject.Find("RightHandAnchor");
-            if (r != null) rightHandAnchor = r.transform;
+            if (r != null)
+            {
+                rightHandAnchor = r.transform;
+                Log("RightHandAnchor auto-found.");
+            }
+            else
+            {
+                Debug.LogError("[AimOnGrip] RightHandAnchor NOT found!");
+            }
         }
 
         if (laserLine != null && defaultLaserMaterial == null)
+        {
             defaultLaserMaterial = laserLine.material;
+            Log("Default laser material cached.");
+        }
 
         sharedState = FindObjectOfType<SharedAimCanvasState>(true);
+
+        if (sharedState != null)
+            Log("SharedAimCanvasState found.");
+        else
+            Debug.LogWarning("[AimOnGrip] SharedAimCanvasState NOT found on start.");
     }
 
     void Update()
     {
         if (sharedState == null)
+        {
             sharedState = FindObjectOfType<SharedAimCanvasState>(true);
+            if (sharedState != null)
+                Log("SharedAimCanvasState found during Update.");
+        }
 
         float gripValue = OVRInput.Get(OVRInput.Axis1D.SecondaryHandTrigger);
         bool gripHeld = gripValue > 0.12f;
 
-        bool hitEnvironment = false;
         Vector3 targetPos = Vector3.zero;
         Quaternion targetRot = Quaternion.identity;
         RaycastHit hitInfo = new RaycastHit();
 
+        bool hitEnvironment = false;
+
         if (gripHeld && rightHandAnchor != null)
         {
             Ray ray = new Ray(rightHandAnchor.position, rightHandAnchor.forward);
+
             if (Physics.Raycast(ray, out hitInfo, raycastMaxDistance, raycastMask))
             {
                 hitEnvironment = true;
@@ -96,28 +137,43 @@ public class AimOnGrip : MonoBehaviour
             }
         }
 
-        // Klik (A) dok držiš grip: flash + NETWORK update shared canvasa
-        if (gripHeld && OVRInput.GetDown(OVRInput.Button.One))
-        {
-            StartCoroutine(FlashMaterials());
-            if (hitEnvironment)
-            {
-                if (sharedState != null)
-                    sharedState.RequestSetPoint(hitInfo.point);
-                else
-                    Debug.LogError("[AimOnGrip] SharedAimCanvasState nije pronađen (nije spawnan?).");
-            }
-        }
-
+        // SHOW / HIDE logs (bez frame spamma)
         bool shouldShow = gripHeld && hitEnvironment;
+
         if (shouldShow && !isVisible)
         {
             isVisible = true;
-            if (useHaptics) StartCoroutine(PulseHaptics(hapticStrength, hapticDuration));
+            Log("Aim became VISIBLE.");
+
+            if (useHaptics)
+                StartCoroutine(PulseHaptics(hapticStrength, hapticDuration));
         }
         else if (!shouldShow && isVisible)
         {
             isVisible = false;
+            Log("Aim became HIDDEN.");
+        }
+
+        // CLICK
+        if (gripHeld && OVRInput.GetDown(OVRInput.Button.One))
+        {
+            Log("A button pressed while gripping.");
+
+            StartCoroutine(FlashMaterials());
+
+            if (hitEnvironment)
+            {
+                Log("Raycast hit -> sending point to SharedAimCanvasState.");
+
+                if (sharedState != null)
+                    sharedState.RequestSetPoint(hitInfo.point);
+                else
+                    Debug.LogError("[AimOnGrip] SharedAimCanvasState missing when trying to send point!");
+            }
+            else
+            {
+                Log("A pressed but NO surface hit.");
+            }
         }
 
         if (aimObject != null)
@@ -126,7 +182,14 @@ public class AimOnGrip : MonoBehaviour
             {
                 Vector3 newPos = shouldShow ? targetPos : aimObject.transform.position;
                 Quaternion newRot = shouldShow ? targetRot : aimObject.transform.rotation;
-                aimObject.transform.position = Vector3.SmoothDamp(aimObject.transform.position, newPos, ref velocity, positionSmoothTime);
+
+                aimObject.transform.position = Vector3.SmoothDamp(
+                    aimObject.transform.position,
+                    newPos,
+                    ref velocity,
+                    positionSmoothTime
+                );
+
                 aimObject.transform.rotation = Quaternion.Slerp(
                     aimObject.transform.rotation,
                     newRot,
@@ -149,6 +212,7 @@ public class AimOnGrip : MonoBehaviour
         if (laserLine != null)
         {
             laserLine.enabled = shouldShow;
+
             if (shouldShow)
             {
                 laserLine.SetPosition(0, rightHandAnchor.position);
@@ -159,6 +223,8 @@ public class AimOnGrip : MonoBehaviour
 
     private IEnumerator PulseHaptics(float s, float d)
     {
+        Log("Haptics pulse triggered.");
+
         OVRInput.SetControllerVibration(1f, s, OVRInput.Controller.RTouch);
         yield return new WaitForSeconds(d);
         OVRInput.SetControllerVibration(0f, 0f, OVRInput.Controller.RTouch);
@@ -166,10 +232,17 @@ public class AimOnGrip : MonoBehaviour
 
     private IEnumerator FlashMaterials()
     {
-        if (flashing) yield break;
+        if (flashing)
+        {
+            Log("Flash skipped (already flashing).");
+            yield break;
+        }
+
         flashing = true;
+        Log("Flash started.");
 
         if (laserLine) laserLine.material = flashMaterial;
+
         if (aimObject)
         {
             Renderer r = aimObject.GetComponent<Renderer>();
@@ -179,6 +252,7 @@ public class AimOnGrip : MonoBehaviour
         yield return new WaitForSeconds(flashDuration);
 
         if (laserLine) laserLine.material = defaultLaserMaterial;
+
         if (aimObject)
         {
             Renderer r = aimObject.GetComponent<Renderer>();
@@ -186,14 +260,21 @@ public class AimOnGrip : MonoBehaviour
         }
 
         flashing = false;
+        Log("Flash ended.");
     }
 
-    // koristi SharedAimCanvasState za update teksta (lokalno)
     public void UpdateTemperatureDisplay(float temperature)
     {
+        Log($"Temperature updated: {temperature:F2}°C");
+
         if (text != null)
         {
-            text.GetComponent<TextMeshProUGUI>().text = $"Temperature = {temperature:F2}°C";
+            text.GetComponent<TextMeshProUGUI>().text =
+                $"Temperature = {temperature:F2}°C";
+        }
+        else
+        {
+            Debug.LogWarning("[AimOnGrip] Text object is NULL!");
         }
     }
 }
