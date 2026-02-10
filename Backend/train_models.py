@@ -1,19 +1,7 @@
 #!/usr/bin/env python3
 """
-Standalone Training Script for Temperature Prediction Models
-
-This script trains the LSTM models for all sensors without running the Flask server.
-Useful for:
-- Initial model training
-- Retraining after data collection
-- Batch training updates
-- Testing model improvements
-
-Usage:
-    python train_models.py                    # Train all sensors
-    python train_models.py --sensor 1         # Train specific sensor
-    python train_models.py --epochs 150       # Custom epochs
-    python train_models.py --verbose          # Detailed output
+FIXED: Standalone Training Script for Temperature Prediction Models
+Key fix: Saves ALL normalization parameters needed for inference
 """
 
 import os
@@ -79,7 +67,9 @@ def ensure_models_directory():
 
 
 def prepare_sequences(data, seq_length=60):
-    """Prepare sequences for training with enhanced features"""
+    """
+    FIXED: Now returns ALL normalization parameters
+    """
     if len(data) < seq_length + 1:
         return None
 
@@ -95,7 +85,7 @@ def prepare_sequences(data, seq_length=60):
     else:
         moving_avg = temperatures.copy()
 
-    # Normalize data
+    # Calculate normalization parameters for ALL features
     temp_mean = temperatures.mean()
     temp_std = temperatures.std() if temperatures.std() > 1e-6 else 1.0
     
@@ -122,19 +112,29 @@ def prepare_sequences(data, seq_length=60):
         X.append(features[i:i + seq_length])
         y.append(temperatures_norm[i + seq_length])
 
-    return np.array(X), np.array(y), temp_mean, temp_std
+    # FIXED: Return ALL normalization parameters as a dict
+    norm_params = {
+        'temp_mean': float(temp_mean),
+        'temp_std': float(temp_std),
+        'diff_mean': float(diff_mean),
+        'diff_std': float(diff_std),
+        'ma_mean': float(ma_mean),
+        'ma_std': float(ma_std)
+    }
+
+    return np.array(X), np.array(y), norm_params
 
 
-def save_model(model, sensor_id, mean, std, val_loss, hyperparams):
-    """Save the trained model and metadata"""
+def save_model(model, sensor_id, norm_params, val_loss, hyperparams):
+    """FIXED: Save model with ALL normalization parameters"""
     try:
         model_path = os.path.join(MODELS_DIR, f"model_{sensor_id}.pt")
         torch.save(model.state_dict(), model_path)
 
         metadata_path = os.path.join(MODELS_DIR, f"metadata_{sensor_id}.json")
         metadata = {
-            'mean': float(mean),
-            'std': float(std),
+            # FIXED: Save all normalization parameters
+            'norm_params': norm_params,
             'val_loss': float(val_loss) if val_loss is not None else None,
             'saved_at': datetime.datetime.now(datetime.UTC).isoformat(),
             'hidden_size': hyperparams['hidden_size'],
@@ -145,26 +145,20 @@ def save_model(model, sensor_id, mean, std, val_loss, hyperparams):
         with open(metadata_path, 'w') as f:
             json.dump(metadata, f, indent=2)
 
-        print(f"  Model saved: {model_path}")
-        print(f"  Metadata saved: {metadata_path}")
+        print(f"  ✓ Model saved: {model_path}")
+        print(f"  ✓ Metadata saved: {metadata_path}")
+        print(f"  ✓ Normalization params: {norm_params}")
         if val_loss is not None:
-            print(f"  Validation Loss: {val_loss:.6f}")
+            print(f"  ✓ Validation Loss: {val_loss:.6f}")
         return True
     except Exception as e:
-        print(f"  Error saving model: {e}")
+        print(f"  ✗ Error saving model: {e}")
         return False
 
 
 # ===== TRAINING FUNCTION ======================================================
 def train_model(sensor_id, max_epochs=100, verbose=False):
-    """
-    Train a model for a specific sensor
-    
-    Args:
-        sensor_id: Sensor identifier
-        max_epochs: Maximum training epochs
-        verbose: Print detailed progress
-    """
+    """Train a model for a specific sensor"""
     print(f"\n{'='*70}")
     print(f"Training Model for Sensor {sensor_id}")
     print(f"{'='*70}")
@@ -193,14 +187,14 @@ def train_model(sensor_id, max_epochs=100, verbose=False):
         print(f"Cannot prepare training sequences")
         return False
 
-    X_train, y_train, mean, std = train_result
+    X_train, y_train, norm_params = train_result
 
     val_result = prepare_sequences(val_data, SEQUENCE_SIZE)
     if val_result is None:
         print(f"Not enough validation data, using training data only")
         X_val, y_val = None, None
     else:
-        X_val, y_val, _, _ = val_result
+        X_val, y_val, _ = val_result  # Don't need norm_params from validation
         print(f"Created {len(X_train)} training sequences, {len(X_val)} validation sequences")
 
     # Convert to tensors
@@ -212,7 +206,7 @@ def train_model(sensor_id, max_epochs=100, verbose=False):
         y_val_tensor = torch.FloatTensor(y_val).unsqueeze(-1)
 
     # Create model
-    print(f"    Building model...")
+    print(f"Building model...")
     print(f"  - Input size: 3 (temp, diff, moving_avg)")
     print(f"  - Hidden size: {HIDDEN_SIZE}")
     print(f"  - Layers: {NUM_LAYERS}")
@@ -321,7 +315,7 @@ def train_model(sensor_id, max_epochs=100, verbose=False):
     model.eval()
 
     # Calculate final metrics
-    print(f"\n  Final Metrics:")
+    print(f"\nFinal Metrics:")
     print(f"  - Best validation loss: {best_val_loss:.6f}")
     print(f"  - Final training loss: {avg_train_loss:.6f}")
     print(f"  - Epochs trained: {epoch + 1}")
@@ -334,10 +328,10 @@ def train_model(sensor_id, max_epochs=100, verbose=False):
         'sequence_size': SEQUENCE_SIZE,
         'dropout': DROPOUT
     }
-    success = save_model(model, sensor_id, mean, std, best_val_loss, hyperparams)
+    success = save_model(model, sensor_id, norm_params, best_val_loss, hyperparams)
     
     if success:
-        print(f"\nTraining completed successfully for sensor {sensor_id}")
+        print(f"\n✓ Training completed successfully for sensor {sensor_id}")
     
     return success
 
@@ -396,12 +390,8 @@ Examples:
     else:
         sensors_to_train = SENSOR_IDS
 
-    # Update global config if specified
-    # global REQ_DATA_POINTS
-    # REQ_DATA_POINTS = args.min_data
-
     print("=" * 70)
-    print("Temperature Prediction Model - Training Script")
+    print("Temperature Prediction Model - Training Script (FIXED)")
     print("=" * 70)
     print(f"\nConfiguration:")
     print(f"  Sensors to train: {sensors_to_train}")
@@ -449,7 +439,7 @@ Examples:
     
     print(f"\nResults:")
     for sensor_id, result in results.items():
-        status = "Success" if result['success'] else "❌ Failed"
+        status = "✓ Success" if result['success'] else "✗ Failed"
         duration_str = f"{result['duration']:.1f}s"
         print(f"  Sensor {sensor_id}: {status} ({duration_str})")
     
@@ -459,11 +449,11 @@ Examples:
     print(f"  Total time: {total_duration:.1f}s")
     
     if successful == len(results):
-        print(f"\nAll models trained successfully!")
+        print(f"\n✓ All models trained successfully!")
     elif successful > 0:
-        print(f"\nSome models failed to train")
+        print(f"\n⚠ Some models failed to train")
     else:
-        print(f"\nAll models failed to train")
+        print(f"\n✗ All models failed to train")
     
     print("\n" + "=" * 70)
 

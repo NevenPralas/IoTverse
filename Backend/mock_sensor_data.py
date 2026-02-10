@@ -7,13 +7,16 @@ import requests
 import time
 import random
 import math
+import threading
 from datetime import datetime
 
 # Configuration
 BASE_URL = "http://localhost:8080"
 # BASE_URL = "http://172.20.10.5:8080/"
 SENSOR_IDS = [1, 2, 3, 4]
-SEND_INTERVAL = 5
+
+TEMP_INTERVAL = 5      # 5 seconds
+NOISE_INTERVAL = 0.2   # 200 milliseconds
 
 BASE_TEMPS = {
     1: 22.0,  # Room temperature
@@ -63,65 +66,90 @@ def send_temperature(sensor_id, temperature):
     """Send temperature data to the API"""
     url = f"{BASE_URL}/sensors/temperature/{sensor_id}"
     payload = {"temperature": temperature}
-    
+
     try:
         response = requests.post(url, json=payload, timeout=5)
         if response.status_code == 200:
-            print(f"Sensor {sensor_id} - Temperature: {temperature}°C")
+            print(f"[Temp] Sensor {sensor_id}: {temperature}°C")
         else:
-            print(f"Sensor {sensor_id} - Error: {response.status_code}")
+            print(f"[Temp] Sensor {sensor_id} Error: {response.status_code}")
     except requests.exceptions.RequestException as e:
-        print(f"Sensor {sensor_id} - Connection error: {e}")
+        print(f"[Temp] Sensor {sensor_id} Connection error: {e}")
 
 
 def send_noise(sensor_id, noise_level):
     """Send noise data to the API"""
     url = f"{BASE_URL}/sensors/noisedetector/{sensor_id}"
     payload = {"noise": noise_level}
-    
+
     try:
-        response = requests.post(url, json=payload, timeout=5)
+        response = requests.post(url, json=payload, timeout=1)
         if response.status_code == 200:
-            print(f"Sensor {sensor_id} - Noise: {noise_level} dB")
+            print(f"[Noise] Sensor {sensor_id}: {noise_level} dB")
         else:
-            print(f"Sensor {sensor_id} - Error: {response.status_code}")
+            print(f"[Noise] Sensor {sensor_id} Error: {response.status_code}")
     except requests.exceptions.RequestException as e:
-        print(f"Sensor {sensor_id} - Connection error: {e}")
+        pass
 
 
-def main():
-    """Main loop to continuously send mock sensor data"""
-    print("=" * 60)
-    print("Mock Sensor Data Generator")
-    print("=" * 60)
-    print(f"Target URL: {BASE_URL}")
-    print(f"Sensor IDs: {SENSOR_IDS}")
-    print(f"Send interval: {SEND_INTERVAL} second(s)")
-    print("=" * 60)
-    print("Press Ctrl+C to stop\n")
-    
+def run_temperature_loop():
+    """Thread function for temperature data"""
     counter = 0
-    
-    try:
-        while True:
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            print(f"\n[{timestamp}] Sending data (iteration {counter})...")
-            
+    print(f"-> Temperature simulation started (Interval: {TEMP_INTERVAL}s)")
+    while True:
+        try:
             for sensor_id in SENSOR_IDS:
                 temperature = generate_temperature(sensor_id, counter)
                 send_temperature(sensor_id, temperature)
-                
+
+            counter += 1
+            time.sleep(TEMP_INTERVAL)
+        except Exception as e:
+            print(f"Error in temp loop: {e}")
+
+
+def run_noise_loop():
+    """Thread function for noise data"""
+    counter = 0
+    print(f"-> Noise simulation started (Interval: {NOISE_INTERVAL}s)")
+    while True:
+        try:
+            for sensor_id in SENSOR_IDS:
                 noise_level = generate_noise(sensor_id, counter)
                 send_noise(sensor_id, noise_level)
-            
+
             counter += 1
-            time.sleep(SEND_INTERVAL)
-            
+            time.sleep(NOISE_INTERVAL)
+        except Exception as e:
+            print(f"Error in noise loop: {e}")
+
+
+def main():
+    """Main entry point"""
+    print("=" * 60)
+    print("Mock Sensor Data Generator (Multi-threaded)")
+    print("=" * 60)
+    print(f"Target URL: {BASE_URL}")
+    print(f"Sensor IDs: {SENSOR_IDS}")
+    print("=" * 60)
+    print("Press Ctrl+C to stop\n")
+
+    # Create threads
+    temp_thread = threading.Thread(target=run_temperature_loop, daemon=True)
+    noise_thread = threading.Thread(target=run_noise_loop, daemon=True)
+
+    # Start threads
+    temp_thread.start()
+    noise_thread.start()
+
+    # Keep the main thread alive to catch KeyboardInterrupt
+    try:
+        while True:
+            time.sleep(1)
     except KeyboardInterrupt:
         print("\n\n" + "=" * 60)
-        print(f"Stopped after {counter} iterations")
+        print("Stopping simulation...")
         print("=" * 60)
-
 
 if __name__ == "__main__":
     main()
