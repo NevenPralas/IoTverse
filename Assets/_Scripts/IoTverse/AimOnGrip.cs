@@ -6,6 +6,7 @@ public class AimOnGrip : MonoBehaviour
 {
     [Header("Debug")]
     [SerializeField] private bool debugLogs = true;
+    [SerializeField] private bool debugRaycastWhileGripping = true; // ako te spam-a, stavi false
 
     [Header("References")]
     [SerializeField] private GameObject aimObject;
@@ -48,6 +49,17 @@ public class AimOnGrip : MonoBehaviour
     public GameObject text;
     private SharedAimCanvasState sharedState;
 
+    // --- Debug state (anti-spam) ---
+    private bool _lastGripHeld = false;
+    private float _lastGripValue = -999f;
+    private float _lastIndexValue = -999f;
+    private bool _lastA = false;
+    private OVRInput.Controller _lastActive = OVRInput.Controller.None;
+
+    private bool _lastHit = false;
+    private string _lastHitName = "";
+    private int _lastHitLayer = -999;
+
     void Log(string msg)
     {
         if (debugLogs)
@@ -70,7 +82,11 @@ public class AimOnGrip : MonoBehaviour
                 if (r != null)
                 {
                     defaultAimMaterial = r.material;
-                    Log("Default aim material cached.");
+                    Log("Default aim material cached from aimObject renderer.");
+                }
+                else
+                {
+                    Log("WARNING: aimObject has no Renderer, can't cache defaultAimMaterial.");
                 }
             }
         }
@@ -85,59 +101,117 @@ public class AimOnGrip : MonoBehaviour
             if (r != null)
             {
                 rightHandAnchor = r.transform;
-                Log("RightHandAnchor auto-found.");
+                Log("RightHandAnchor auto-found via GameObject.Find('RightHandAnchor').");
             }
             else
             {
-                Debug.LogError("[AimOnGrip] RightHandAnchor NOT found!");
+                Debug.LogError("[AimOnGrip] RightHandAnchor NOT found! (GameObject named 'RightHandAnchor' missing)");
             }
+        }
+
+        if (rightHandAnchor != null)
+        {
+            Log($"RightHandAnchor OK: name='{rightHandAnchor.name}' path='{GetTransformPath(rightHandAnchor)}'");
         }
 
         if (laserLine != null && defaultLaserMaterial == null)
         {
             defaultLaserMaterial = laserLine.material;
-            Log("Default laser material cached.");
+            Log("Default laser material cached from laserLine.");
         }
 
         sharedState = FindObjectOfType<SharedAimCanvasState>(true);
-
         if (sharedState != null)
-            Log("SharedAimCanvasState found.");
+            Log("SharedAimCanvasState found in scene.");
         else
-            Debug.LogWarning("[AimOnGrip] SharedAimCanvasState NOT found on start.");
+            Log("WARNING: SharedAimCanvasState NOT found on Start().");
     }
 
     void Update()
     {
+        // --- Ensure sharedState exists ---
         if (sharedState == null)
         {
             sharedState = FindObjectOfType<SharedAimCanvasState>(true);
             if (sharedState != null)
-                Log("SharedAimCanvasState found during Update.");
+                Log("SharedAimCanvasState found during Update().");
         }
 
-        float gripValue = OVRInput.Get(OVRInput.Axis1D.SecondaryHandTrigger);
+        // --- Input ---
+        var active = OVRInput.GetActiveController();
+
+        float gripValue = OVRInput.Get(OVRInput.Axis1D.SecondaryHandTrigger);   // "grip" (hand trigger) na Touch kontrolerima
+        float indexValue = OVRInput.Get(OVRInput.Axis1D.SecondaryIndexTrigger); // "trigger" (index trigger)
+
         bool gripHeld = gripValue > 0.12f;
 
+        bool aDown = OVRInput.GetDown(OVRInput.Button.One);
+
+        // Log input only on change (anti-spam)
+        if (active != _lastActive ||
+            Mathf.Abs(gripValue - _lastGripValue) > 0.05f ||
+            Mathf.Abs(indexValue - _lastIndexValue) > 0.05f ||
+            gripHeld != _lastGripHeld)
+        {
+            Log($"Input: ActiveController={active} | SecondaryHandTrigger(grip?)={gripValue:F2} held={gripHeld} | SecondaryIndexTrigger(trigger)={indexValue:F2}");
+            _lastActive = active;
+            _lastGripValue = gripValue;
+            _lastIndexValue = indexValue;
+            _lastGripHeld = gripHeld;
+        }
+
+        // --- Raycast + targets ---
         Vector3 targetPos = Vector3.zero;
         Quaternion targetRot = Quaternion.identity;
         RaycastHit hitInfo = new RaycastHit();
-
         bool hitEnvironment = false;
 
         if (gripHeld && rightHandAnchor != null)
         {
             Ray ray = new Ray(rightHandAnchor.position, rightHandAnchor.forward);
 
-            if (Physics.Raycast(ray, out hitInfo, raycastMaxDistance, raycastMask))
+            if (useRaycast)
             {
-                hitEnvironment = true;
-                targetPos = hitInfo.point + hitInfo.normal * 0.01f;
-                targetRot = Quaternion.LookRotation(-hitInfo.normal);
+                if (Physics.Raycast(ray, out hitInfo, raycastMaxDistance, raycastMask))
+                {
+                    hitEnvironment = true;
+                    targetPos = hitInfo.point + hitInfo.normal * 0.01f;
+                    targetRot = Quaternion.LookRotation(-hitInfo.normal);
+                }
+                else
+                {
+                    // fallback (ako želiš): možeš koristiti defaultDistance, ali zadržavam istu funkcionalnost kao prije
+                    // targetPos = rightHandAnchor.position + rightHandAnchor.forward * defaultDistance;
+                    // targetRot = rightHandAnchor.rotation;
+                }
             }
         }
 
-        // SHOW / HIDE logs (bez frame spamma)
+        // Raycast log: samo kad se promijeni hit/miss ili objekt koji pogađa
+        if (debugLogs && debugRaycastWhileGripping && gripHeld && rightHandAnchor != null)
+        {
+            if (hitEnvironment != _lastHit ||
+                (hitEnvironment && (hitInfo.collider != null) &&
+                 (hitInfo.collider.name != _lastHitName || hitInfo.collider.gameObject.layer != _lastHitLayer)))
+            {
+                if (hitEnvironment && hitInfo.collider != null)
+                {
+                    Log($"Raycast HIT: '{hitInfo.collider.name}' layer={hitInfo.collider.gameObject.layer} point={hitInfo.point} normal={hitInfo.normal}");
+                    _lastHitName = hitInfo.collider.name;
+                    _lastHitLayer = hitInfo.collider.gameObject.layer;
+                }
+                else
+                {
+                    Log($"Raycast MISS: origin={rightHandAnchor.position} forward={rightHandAnchor.forward} mask={raycastMask.value} maxDist={raycastMaxDistance}");
+                    _lastHitName = "";
+                    _lastHitLayer = -999;
+                }
+
+                _lastHit = hitEnvironment;
+            }
+        }
+
+        // SHOW / HIDE (ista logika kao prije: mora biti gripHeld AND hitEnvironment)
         bool shouldShow = gripHeld && hitEnvironment;
 
         if (shouldShow && !isVisible)
@@ -154,10 +228,10 @@ public class AimOnGrip : MonoBehaviour
             Log("Aim became HIDDEN.");
         }
 
-        // CLICK
-        if (gripHeld && OVRInput.GetDown(OVRInput.Button.One))
+        // CLICK (A while gripping)
+        if (gripHeld && aDown)
         {
-            Log("A button pressed while gripping.");
+            Log("A button pressed while gripping -> Flash + (if hit) send point.");
 
             StartCoroutine(FlashMaterials());
 
@@ -172,10 +246,11 @@ public class AimOnGrip : MonoBehaviour
             }
             else
             {
-                Log("A pressed but NO surface hit.");
+                Log("A pressed but NO surface hit (hitEnvironment=false).");
             }
         }
 
+        // Move/scale aimObject
         if (aimObject != null)
         {
             if (smoothMovement)
@@ -202,18 +277,22 @@ public class AimOnGrip : MonoBehaviour
                 aimObject.transform.rotation = targetRot;
             }
 
-            aimObject.transform.localScale = Vector3.Lerp(
-                aimObject.transform.localScale,
-                shouldShow ? shownScale : hiddenScale,
-                Time.deltaTime * scaleShowSpeed
-            );
+            if (scaleOnShow)
+            {
+                aimObject.transform.localScale = Vector3.Lerp(
+                    aimObject.transform.localScale,
+                    shouldShow ? shownScale : hiddenScale,
+                    Time.deltaTime * scaleShowSpeed
+                );
+            }
         }
 
+        // Laser
         if (laserLine != null)
         {
             laserLine.enabled = shouldShow;
 
-            if (shouldShow)
+            if (shouldShow && rightHandAnchor != null)
             {
                 laserLine.SetPosition(0, rightHandAnchor.position);
                 laserLine.SetPosition(1, targetPos);
@@ -223,7 +302,7 @@ public class AimOnGrip : MonoBehaviour
 
     private IEnumerator PulseHaptics(float s, float d)
     {
-        Log("Haptics pulse triggered.");
+        Log($"Haptics pulse triggered. strength={s:F2} duration={d:F2}");
 
         OVRInput.SetControllerVibration(1f, s, OVRInput.Controller.RTouch);
         yield return new WaitForSeconds(d);
@@ -269,12 +348,27 @@ public class AimOnGrip : MonoBehaviour
 
         if (text != null)
         {
-            text.GetComponent<TextMeshProUGUI>().text =
-                $"Temperature = {temperature:F2}°C";
+            var tmp = text.GetComponent<TextMeshProUGUI>();
+            if (tmp != null)
+                tmp.text = $"Temperature = {temperature:F2}°C";
+            else
+                Log("WARNING: Text object exists but has no TextMeshProUGUI component.");
         }
         else
         {
-            Debug.LogWarning("[AimOnGrip] Text object is NULL!");
+            Log("WARNING: Text object is NULL!");
         }
+    }
+
+    private static string GetTransformPath(Transform t)
+    {
+        if (t == null) return "(null)";
+        string path = t.name;
+        while (t.parent != null)
+        {
+            t = t.parent;
+            path = t.name + "/" + path;
+        }
+        return path;
     }
 }

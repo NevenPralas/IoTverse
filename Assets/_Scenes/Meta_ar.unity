@@ -45421,6 +45421,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 438e4ab98e5f528479db6ffc82785b02, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  debugLogs: 1
+  debugRaycastWhileGripping: 1
   aimObject: {fileID: 214691324}
   rightHandAnchor: {fileID: 722105605}
   defaultDistance: 0.25

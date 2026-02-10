@@ -76,10 +76,10 @@ public class HeatMapStaticWithJson : MonoBehaviour
 
     [Header("Data Jedi TRUSTED (GET) - FORECAST")]
     [SerializeField] private int latestNCountForecast = 30;
-    [SerializeField] private string resPred1 = "dipProj25_temperature_prediction1";
-    [SerializeField] private string resPred2 = "dipProj25_temperature_prediction2";
-    [SerializeField] private string resPred3 = "dipProj25_temperature_prediction3";
-    [SerializeField] private string resPred4 = "dipProj25_temperature_prediction4";
+    [SerializeField] private string resPred1 = "dipProj25_predict_temp1";
+    [SerializeField] private string resPred2 = "dipProj25_predict_temp2";
+    [SerializeField] private string resPred3 = "dipProj25_predict_temp3";
+    [SerializeField] private string resPred4 = "dipProj25_predict_temp4";
 
     [Header("Trusted headers")]
     [SerializeField] private string authorization = "PREAUTHENTICATED";
