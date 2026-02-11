@@ -42,7 +42,7 @@ public class HeatMapStaticWithJson : MonoBehaviour
     [Header("Debug (optional TMP)")]
     public TMP_Text debugStatus;
 
-    // Ovo je samo vizualni toggle (heatmap render). Podaci se i dalje osvježavaju.
+    // Vizualni toggle
     public bool heatmapEnabled = true;
 
     private Mesh originalMesh;
@@ -90,8 +90,6 @@ public class HeatMapStaticWithJson : MonoBehaviour
     [Header("Polling")]
     [SerializeField] private float pollSeconds = 5.0f;
     [SerializeField] private int requestTimeoutSeconds = 15;
-
-    [Tooltip("Postman SSL cert OFF ekvivalent. Uključi ako endpoint vraća SSL chain koji Unity ne voli.")]
     [SerializeField] private bool acceptAnyCertificate = true;
 
     [Header("Debug")]
@@ -99,12 +97,12 @@ public class HeatMapStaticWithJson : MonoBehaviour
     [SerializeField] private int debugBodyMaxChars = 600;
 
     // =========================================================
-    // Rolling window (SHIFT svaki 1s) - CURRENT + FORECAST
+    // Rolling window
     // =========================================================
     [Header("Rolling Window (shift svaki 1s)")]
-    [SerializeField] private int windowSeconds = 30;              // zadnjih 30 sekundi (past+now)
-    [SerializeField] private int forecastSeconds = 29;            // future horizon u sekundama (R2 = now+29)
-    [SerializeField] private int maxCachedSamplesPerSensor = 600; // cache ~10 minuta (ako dolazi ~1/5s)
+    [SerializeField] private int windowSeconds = 30;
+    [SerializeField] private int forecastSeconds = 29;
+    [SerializeField] private int maxCachedSamplesPerSensor = 600;
 
     private float _rollTimer = 0f;
 
@@ -121,31 +119,24 @@ public class HeatMapStaticWithJson : MonoBehaviour
         }
     }
 
-    // cache uzoraka po senzoru (sorted by timestampUtc asc)
     private readonly List<TimestampValue> _sensor1Data = new List<TimestampValue>();
     private readonly List<TimestampValue> _sensor2Data = new List<TimestampValue>();
     private readonly List<TimestampValue> _sensor3Data = new List<TimestampValue>();
     private readonly List<TimestampValue> _sensor4Data = new List<TimestampValue>();
 
-    // cache uzoraka za PREDIKCIJE (sorted by timestampUtc asc)
     private readonly List<TimestampValue> _pred1Data = new List<TimestampValue>();
     private readonly List<TimestampValue> _pred2Data = new List<TimestampValue>();
     private readonly List<TimestampValue> _pred3Data = new List<TimestampValue>();
     private readonly List<TimestampValue> _pred4Data = new List<TimestampValue>();
 
-    // zadnje poznate vrijednosti (step-hold) - current
     private bool _hasLast1, _hasLast2, _hasLast3, _hasLast4;
     private float _last1, _last2, _last3, _last4;
     private DateTime _lastTs1Utc, _lastTs2Utc, _lastTs3Utc, _lastTs4Utc;
 
-    // zadnje poznate vrijednosti (step-hold) - forecast
     private bool _hasPLast1, _hasPLast2, _hasPLast3, _hasPLast4;
     private float _pLast1, _pLast2, _pLast3, _pLast4;
     private DateTime _pLastTs1Utc, _pLastTs2Utc, _pLastTs3Utc, _pLastTs4Utc;
 
-    // =========================================================
-    // DATA MODEL (XCharts i ostale skripte očekuju ovo)
-    // =========================================================
     private MeasurementData data;
     private MeasurementData forecastData;
 
@@ -161,8 +152,6 @@ public class HeatMapStaticWithJson : MonoBehaviour
 
     private bool forecastEnabled = false;
 
-    private const int PastCount = 29;
-    private const int FutureCount = 29;
     private const int ForecastAxisCount = 61;
 
     [Header("Forecast Style (Serie 1)")]
@@ -171,14 +160,27 @@ public class HeatMapStaticWithJson : MonoBehaviour
     [SerializeField] private float gapLength = 4f;
     [SerializeField] private float dotLength = 0f;
 
-    // ======== INTERNAL INIT / CACHED COMPONENTS ========
+    // internal cached components
     private bool _initialized = false;
     private MeshFilter _mf;
     private Renderer _r;
     private MeshCollider _mc;
 
+    // Debug anti-spam / tracing
+    private int _lastDataLen = -1;
+    private int _lastForecastLen = -1;
+    private float _pollTick = 0;
+    private float _chartRefreshTick = 0;
+
+    private void Log(string tag, string msg)
+    {
+        if (!debugLogs) return;
+        Debug.Log($"{tag} {msg}");
+    }
+
     private void Awake()
     {
+        Log("[HEATMAP]", $"Awake() scene='{UnityEngine.SceneManagement.SceneManager.GetActiveScene().name}' obj='{name}' active={gameObject.activeInHierarchy}");
         EnsureInitialized();
     }
 
@@ -192,12 +194,12 @@ public class HeatMapStaticWithJson : MonoBehaviour
 
         if (_mf == null)
         {
-            Debug.LogError("[HeatMap] MeshFilter missing!");
+            Debug.LogError("[HEATMAP] ERROR: MeshFilter missing!");
             return;
         }
         if (_r == null)
         {
-            Debug.LogError("[HeatMap] Renderer missing!");
+            Debug.LogError("[HEATMAP] ERROR: Renderer missing!");
             return;
         }
 
@@ -205,9 +207,9 @@ public class HeatMapStaticWithJson : MonoBehaviour
         originalMaterial = _r.sharedMaterial;
 
         if (originalMesh == null)
-            Debug.LogError("[HeatMap] originalMesh je NULL (MeshFilter.sharedMesh). Provjeri da plane ima mesh!");
+            Debug.LogError("[HEATMAP] ERROR: originalMesh is NULL (MeshFilter.sharedMesh).");
         if (originalMaterial == null)
-            Debug.LogError("[HeatMap] originalMaterial je NULL (Renderer.sharedMaterial).");
+            Debug.LogError("[HEATMAP] ERROR: originalMaterial is NULL (Renderer.sharedMaterial).");
 
         if (originalMesh != null)
         {
@@ -216,19 +218,35 @@ public class HeatMapStaticWithJson : MonoBehaviour
         }
 
         _initialized = true;
+
+        Log("[HEATMAP]", $"Initialized OK. planeWidth={planeWidth:F3} planeDepth={planeDepth:F3} mesh='{(originalMesh != null ? originalMesh.name : "NULL")}'");
     }
 
     void Start()
     {
         EnsureInitialized();
 
+        Log("[HEATMAP]", "Start() begin");
         SetForecastTmpLabelsEnabled(false);
 
-        if (lineChart != null)
+        // chart reference diagnostics
+        if (lineChart == null)
         {
+            Log("[LINECHART]", "ERROR: lineChart reference is NULL in inspector!");
+        }
+        else
+        {
+            Log("[LINECHART]", $"lineChart ref OK: '{lineChart.name}' active={lineChart.activeInHierarchy}");
+
             var chart = lineChart.GetComponent<LineChart>();
-            if (chart != null)
+            if (chart == null)
             {
+                Log("[LINECHART]", "ERROR: lineChart GameObject has NO LineChart component!");
+            }
+            else
+            {
+                Log("[LINECHART]", $"LineChart component OK. seriesCount={chart.series.Count}");
+
                 chart.ClearData();
                 ForceYAxis10to40(chart);
                 UpdateChartTitleWithDate(chart);
@@ -237,25 +255,28 @@ public class HeatMapStaticWithJson : MonoBehaviour
                 ConfigureForecastSerie(chart);
 
                 chart.RefreshChart();
+
+                Log("[LINECHART]", "Chart initialized: ClearData + EnsureTwoSeries + RefreshChart done.");
             }
         }
 
-        // ostavi kao prije (heatmap vizual OFF dok se ne upali preko UI/mreže)
         DeactivateHeatmap();
-
         SaveCurrentAngles();
 
-        // inicijalno napravi rolling window da odmah prikazuje "sad"
         RebuildMeasurementDataRolling();
         RebuildForecastDataRolling();
         ApplyCornerTempsFromNow();
+
+        Log("[HEATMAP]", $"After initial build: dataLen={(data?.measurements != null ? data.measurements.Length : 0)} " +
+                        $"forecastLen={(forecastData?.measurements != null ? forecastData.measurements.Length : 0)} " +
+                        $"angles=[{angle1:0.0},{angle2:0.0},{angle3:0.0},{angle4:0.0}]");
 
         StartCoroutine(PollDataJediLoop());
     }
 
     void Update()
     {
-        // 1) shift prozora svake 1s (neovisno o pollSeconds)
+        // 1) roll tick each 1 sec
         _rollTimer += Time.deltaTime;
         if (_rollTimer >= 1f)
         {
@@ -265,23 +286,43 @@ public class HeatMapStaticWithJson : MonoBehaviour
             RebuildForecastDataRolling();
             ApplyCornerTempsFromNow();
 
-            if (isTrackingPoint) RefreshChartWindowForNow();
+            int dl = data?.measurements != null ? data.measurements.Length : 0;
+            int fl = forecastData?.measurements != null ? forecastData.measurements.Length : 0;
+
+            if (dl != _lastDataLen || fl != _lastForecastLen)
+            {
+                Log("[HEATMAP]", $"[ROLL-1S] rebuilt windows: dataLen={dl} forecastLen={fl} nowAngles=[{angle1:0.0},{angle2:0.0},{angle3:0.0},{angle4:0.0}]");
+                _lastDataLen = dl;
+                _lastForecastLen = fl;
+            }
+            else
+            {
+                Log("[HEATMAP]", $"[ROLL-1S] tick. nowAngles=[{angle1:0.0},{angle2:0.0},{angle3:0.0},{angle4:0.0}] cacheCounts curr=[{_sensor1Data.Count},{_sensor2Data.Count},{_sensor3Data.Count},{_sensor4Data.Count}] pred=[{_pred1Data.Count},{_pred2Data.Count},{_pred3Data.Count},{_pred4Data.Count}]");
+            }
+
+            if (isTrackingPoint)
+            {
+                Log("[LINECHART]", "[ROLL-1S] isTrackingPoint=true -> RefreshChartWindowForNow()");
+                RefreshChartWindowForNow();
+            }
         }
 
-        // 2) heatmap render update samo kad je heatmap vizualno uključen
+        // 2) heatmap render update only when enabled
         if (heatmapEnabled && autoUpdate && HasValuesChanged())
         {
+            Log("[HEATMAP]", $"Heatmap values changed -> GenerateHeatmap() angles=[{angle1:0.0},{angle2:0.0},{angle3:0.0},{angle4:0.0}]");
             GenerateHeatmap();
             SaveCurrentAngles();
         }
 
-        // 3) dodatno osvježenje grafa (kao prije)
+        // 3) extra chart refresh tick
         if (isTrackingPoint && data != null && data.measurements != null && data.measurements.Length > 0)
         {
             chartUpdateTimer += Time.deltaTime;
             if (chartUpdateTimer >= ChartUpdatePeriod)
             {
                 chartUpdateTimer = 0f;
+                Log("[LINECHART]", "[CHART-1S] RefreshChartWindowForNow()");
                 RefreshChartWindowForNow();
             }
         }
@@ -293,30 +334,43 @@ public class HeatMapStaticWithJson : MonoBehaviour
     public void SetForecastEnabled(bool enabled)
     {
         forecastEnabled = enabled;
-
-        // kad je ON, prikazuj TMP labele (naših 5)
+        Log("[LINECHART]", $"SetForecastEnabled({enabled})");
         SetForecastTmpLabelsEnabled(forecastEnabled);
-
         if (isTrackingPoint) RefreshChartWindowForNow();
     }
 
     public void UpdateChartForPoint(Vector3 worldPoint)
     {
-        if (lineChart == null || data == null || data.measurements == null || data.measurements.Length == 0)
+        Log("[LINECHART]", $"UpdateChartForPoint(worldPoint={worldPoint}) called.");
+
+        if (lineChart == null)
+        {
+            Log("[LINECHART]", "UpdateChartForPoint early-exit: lineChart is NULL");
             return;
+        }
+        if (data == null || data.measurements == null || data.measurements.Length == 0)
+        {
+            Log("[LINECHART]", $"UpdateChartForPoint early-exit: data missing. dataNull={data == null} len={(data?.measurements != null ? data.measurements.Length : 0)}");
+            return;
+        }
 
         trackedPoint = worldPoint;
         isTrackingPoint = true;
+
+        Log("[LINECHART]", "isTrackingPoint=true -> RefreshChartWindowForNow()");
         RefreshChartWindowForNow();
     }
 
     // =========================================================
-    // Data Jedi polling (CURRENT + FORECAST endpoints)
+    // Data Jedi polling
     // =========================================================
     private IEnumerator PollDataJediLoop()
     {
+        Log("[DATAJEDI]", $"PollDataJediLoop START pollSeconds={pollSeconds} baseUrl={baseUrl}");
         while (true)
         {
+            _pollTick++;
+            Log("[DATAJEDI]", $"--- POLL TICK #{_pollTick:0} ---");
             yield return FetchAndApplyLatestSamples();
             yield return new WaitForSeconds(pollSeconds);
         }
@@ -336,7 +390,6 @@ public class HeatMapStaticWithJson : MonoBehaviour
         yield return FetchOneRes(resPred3, 3, true);
         yield return FetchOneRes(resPred4, 4, true);
 
-        // nakon polla samo updateaj “now” (rolling će se rebuildat na sljedeći 1s tick)
         ApplyCornerTempsFromNow();
 
         bool anyCurrent =
@@ -353,13 +406,13 @@ public class HeatMapStaticWithJson : MonoBehaviour
 
         if (!anyCurrent)
         {
-            SetStatus("[HeatMap] DataJedi poll: NO CURRENT DATA parsed -> angles ostaju default");
+            SetStatus("[DATAJEDI] poll: NO CURRENT DATA parsed -> angles remain default");
         }
         else
         {
             string stale = BuildStaleStatus();
             string pred = anyPred ? " | forecast:OK" : " | forecast:EMPTY";
-            SetStatus($"[HeatMap] DataJedi poll OK | A1={angle1:0.0} A2={angle2:0.0} A3={angle3:0.0} A4={angle4:0.0}{stale}{pred}");
+            SetStatus($"[DATAJEDI] poll OK | A1={angle1:0.0} A2={angle2:0.0} A3={angle3:0.0} A4={angle4:0.0}{stale}{pred}");
         }
     }
 
@@ -383,6 +436,8 @@ public class HeatMapStaticWithJson : MonoBehaviour
             $"&latestNCount={count}" +
             $"&{UnityWebRequest.EscapeURL(resParamName)}={UnityWebRequest.EscapeURL(resValue)}";
 
+        Log("[DATAJEDI]", $"GET {(isForecast ? "PRED" : "CURR")} sensor{sensorIndex} url='{url}'");
+
         using (var req = UnityWebRequest.Get(url))
         {
             req.SetRequestHeader("Authorization", authorization);
@@ -405,33 +460,29 @@ public class HeatMapStaticWithJson : MonoBehaviour
 
             if (req.result != UnityWebRequest.Result.Success)
             {
-                Debug.LogWarning($"[DataJedi] HTTP FAIL {(isForecast ? "PRED" : "CURR")} sensor{sensorIndex} res={resValue} code={code} err={req.error}");
+                Debug.LogWarning($"[DATAJEDI] HTTP FAIL {(isForecast ? "PRED" : "CURR")} sensor{sensorIndex} res={resValue} code={code} err={req.error}");
                 if (!string.IsNullOrEmpty(bodyShort)) Debug.LogWarning(bodyShort);
                 yield break;
             }
 
             if (!TryParseTrustedJson(body, valueKey, out List<TimestampValue> series))
             {
-                Debug.LogWarning($"[DataJedi] PARSE FAIL {(isForecast ? "PRED" : "CURR")} sensor{sensorIndex} res={resValue} code={code} bodyLen={(body != null ? body.Length : 0)}");
+                Debug.LogWarning($"[DATAJEDI] PARSE FAIL {(isForecast ? "PRED" : "CURR")} sensor{sensorIndex} res={resValue} code={code} bodyLen={(body != null ? body.Length : 0)}");
                 if (!string.IsNullOrEmpty(bodyShort)) Debug.LogWarning(bodyShort);
                 yield break;
             }
 
-            // Ako je forecast i timestampovi nisu “u budućnosti”, remapaj u budućnost (da ne bude flatline)
             if (isForecast)
                 series = MaybeRemapForecastSeriesToFuture(series);
 
             ApplySeriesToCache(series, sensorIndex, isForecast);
 
-            if (debugLogs)
-            {
-                var list = GetSensorList(sensorIndex, isForecast);
-                var last = list.Count > 0 ? list[list.Count - 1] : null;
-                string lastLocal = last != null ? last.timestampUtc.ToLocalTime().ToString("HH:mm:ss.fff") : "N/A";
-                float lastVal = last != null ? last.value : 0f;
+            var list = GetSensorList(sensorIndex, isForecast);
+            var last = list.Count > 0 ? list[list.Count - 1] : null;
+            string lastLocal = last != null ? last.timestampUtc.ToLocalTime().ToString("HH:mm:ss.fff") : "N/A";
+            float lastVal = last != null ? last.value : 0f;
 
-                Debug.Log($"[DataJedi] OK {(isForecast ? "PRED" : "CURR")} sensor{sensorIndex} res={resValue} http={code} parsed={series.Count} cache={list.Count} last={lastLocal} val={lastVal:0.0}");
-            }
+            Log("[DATAJEDI]", $"OK {(isForecast ? "PRED" : "CURR")} sensor{sensorIndex} res={resValue} http={code} parsed={series.Count} cache={list.Count} last={lastLocal} val={lastVal:0.0}");
         }
     }
 
@@ -451,18 +502,6 @@ public class HeatMapStaticWithJson : MonoBehaviour
                                   _pred4Data;
     }
 
-    // JSON format:
-    // [
-    //   {
-    //     "deviceId": "...",
-    //     "<GW_NODE>": {
-    //       "<SENSOR_NODE>": {
-    //         "<ISO>": { "temperature": 22.2 },
-    //         ...
-    //       }
-    //     }
-    //   }
-    // ]
     private bool TryParseTrustedJson(string json, string key, out List<TimestampValue> series)
     {
         series = null;
@@ -517,7 +556,6 @@ public class HeatMapStaticWithJson : MonoBehaviour
         DateTime nowUtc = DateTime.UtcNow;
         DateTime maxTs = series[series.Count - 1].timestampUtc;
 
-        // Ako uopće nema future timestampova (svi su <= now), pretpostavi da su to "koraci" pa ih presloži u budućnost.
         if (maxTs <= nowUtc.AddSeconds(1))
         {
             double stepSec = EstimateMedianStepSeconds(series);
@@ -526,11 +564,12 @@ public class HeatMapStaticWithJson : MonoBehaviour
             var remapped = new List<TimestampValue>(series.Count);
             for (int i = 0; i < series.Count; i++)
             {
-                // i=0 -> now+step, i=1 -> now+2*step...
                 DateTime ts = nowUtc.AddSeconds((i + 1) * stepSec);
                 remapped.Add(new TimestampValue(ts, series[i].value));
             }
             remapped.Sort((a, b) => a.timestampUtc.CompareTo(b.timestampUtc));
+
+            Log("[DATAJEDI]", $"Remapped forecast series to future: count={series.Count} stepSec~{stepSec:0.0}");
             return remapped;
         }
 
@@ -555,14 +594,12 @@ public class HeatMapStaticWithJson : MonoBehaviour
         return diffs.Count % 2 == 1 ? diffs[mid] : (diffs[mid - 1] + diffs[mid]) / 2.0;
     }
 
-    // cache + dedupe + lastKnown update
     private void ApplySeriesToCache(List<TimestampValue> series, int sensorIndex, bool isForecast)
     {
         if (series == null || series.Count == 0) return;
 
         var targetList = GetSensorList(sensorIndex, isForecast);
 
-        // dedupe: dodaj samo one koje ne postoje (po timestampu) – tolerancija ~500ms
         foreach (var tv in series)
         {
             bool exists = false;
@@ -585,7 +622,6 @@ public class HeatMapStaticWithJson : MonoBehaviour
         while (targetList.Count > maxCachedSamplesPerSensor)
             targetList.RemoveAt(0);
 
-        // update lastKnown
         if (targetList.Count > 0)
         {
             var last = targetList[targetList.Count - 1];
@@ -605,11 +641,10 @@ public class HeatMapStaticWithJson : MonoBehaviour
                 if (sensorIndex == 4) { _hasPLast4 = true; _pLast4 = last.value; _pLastTs4Utc = last.timestampUtc; }
             }
         }
+
+        Log("[DATAJEDI]", $"Cache updated {(isForecast ? "PRED" : "CURR")} sensor{sensorIndex}: cacheCount={targetList.Count}");
     }
 
-    // =========================================================
-    // Rolling CURRENT: zadnjih windowSeconds sekundi, shift svake sekunde, bazirano na DateTime.UtcNow
-    // =========================================================
     private void RebuildMeasurementDataRolling()
     {
         int n = Mathf.Max(2, windowSeconds);
@@ -620,7 +655,7 @@ public class HeatMapStaticWithJson : MonoBehaviour
 
         for (int i = 0; i < n; i++)
         {
-            DateTime ts = nowUtc.AddSeconds(-(n - 1 - i)); // oldest -> newest (sad)
+            DateTime ts = nowUtc.AddSeconds(-(n - 1 - i));
             float v1 = FindValueAtOrBefore(_sensor1Data, ts, _hasLast1, _last1);
             float v2 = FindValueAtOrBefore(_sensor2Data, ts, _hasLast2, _last2);
             float v3 = FindValueAtOrBefore(_sensor3Data, ts, _hasLast3, _last3);
@@ -629,7 +664,7 @@ public class HeatMapStaticWithJson : MonoBehaviour
             data.measurements[i] = new Measurement
             {
                 id = i,
-                timestamp = ts.ToString("o"), // ISO UTC
+                timestamp = ts.ToString("o"),
                 temperature1 = v1,
                 temperature2 = v2,
                 temperature3 = v3,
@@ -638,23 +673,17 @@ public class HeatMapStaticWithJson : MonoBehaviour
         }
     }
 
-    // =========================================================
-    // Rolling FORECAST: now..now+forecastSeconds (step-hold po pred cacheu)
-    // Napomena: za chart koristimo future sekunde kao zasebnu strukturu (forecastData)
-    // =========================================================
     private void RebuildForecastDataRolling()
     {
-        int n = Mathf.Max(2, windowSeconds); // radi kompatibilnosti (koristimo 30 također)
+        int n = Mathf.Max(2, windowSeconds);
         int future = Mathf.Max(1, forecastSeconds);
-        int total = n + future; // n (past+now) + future (now+1..now+future)
+        int total = n + future;
 
         DateTime nowUtc = DateTime.UtcNow;
 
         forecastData = new MeasurementData();
         forecastData.measurements = new Measurement[total];
 
-        // prvo kopiraj "past+now" iz current data (da indexi 0..n-1 uvijek postoje)
-        // (ako data još nije spremna, napravi “step-hold” i ovdje)
         for (int i = 0; i < n; i++)
         {
             DateTime ts = nowUtc.AddSeconds(-(n - 1 - i));
@@ -674,24 +703,21 @@ public class HeatMapStaticWithJson : MonoBehaviour
             };
         }
 
-        // sad future: now+1..now+future
         for (int i = 1; i <= future; i++)
         {
             DateTime ts = nowUtc.AddSeconds(i);
 
-            // za forecast koristimo pred cache; ako nema, fallback na current last
             float p1 = FindValueAtOrBefore(_pred1Data, ts, _hasPLast1, _pLast1);
             float p2 = FindValueAtOrBefore(_pred2Data, ts, _hasPLast2, _pLast2);
             float p3 = FindValueAtOrBefore(_pred3Data, ts, _hasPLast3, _pLast3);
             float p4 = FindValueAtOrBefore(_pred4Data, ts, _hasPLast4, _pLast4);
 
-            // ako pred nema ništa, drži current zadnje
             if (!_hasPLast1 && _hasLast1) p1 = _last1;
             if (!_hasPLast2 && _hasLast2) p2 = _last2;
             if (!_hasPLast3 && _hasLast3) p3 = _last3;
             if (!_hasPLast4 && _hasLast4) p4 = _last4;
 
-            int idx = (n - 1) + i; // odmah nakon "now" točke
+            int idx = (n - 1) + i;
             if (idx < 0 || idx >= forecastData.measurements.Length) continue;
 
             forecastData.measurements[idx] = new Measurement
@@ -706,7 +732,6 @@ public class HeatMapStaticWithJson : MonoBehaviour
         }
     }
 
-    // step-hold finder (binary search)
     private float FindValueAtOrBefore(List<TimestampValue> list, DateTime targetTsUtc, bool hasFallback, float fallback)
     {
         if (list == null || list.Count == 0)
@@ -731,8 +756,6 @@ public class HeatMapStaticWithJson : MonoBehaviour
         }
 
         if (best >= 0) return list[best].value;
-
-        // target stariji od prvog uzorka
         return hasFallback ? fallback : list[0].value;
     }
 
@@ -748,25 +771,31 @@ public class HeatMapStaticWithJson : MonoBehaviour
         angle4 = m.temperature4;
     }
 
-    // =========================================================
-    // CHART
-    // Ključ: u normal modu prikazuje rolling zadnjih 30s (sad je stvarno "sad"),
-    // u forecast modu koristi DataJedi prediction cache za budućih +29s.
-    // =========================================================
     private void RefreshChartWindowForNow()
     {
-        if (lineChart == null || data == null || data.measurements == null || data.measurements.Length == 0)
+        if (lineChart == null)
+        {
+            Log("[LINECHART]", "RefreshChartWindowForNow early-exit: lineChart NULL");
             return;
+        }
+        if (data == null || data.measurements == null || data.measurements.Length == 0)
+        {
+            Log("[LINECHART]", "RefreshChartWindowForNow early-exit: data missing");
+            return;
+        }
+        if (!isTrackingPoint)
+        {
+            Log("[LINECHART]", "RefreshChartWindowForNow called but isTrackingPoint=false (unexpected).");
+        }
 
         int nowIdx = data.measurements.Length - 1;
-
         if (nowIdx != cachedNowIndex)
         {
             cachedNowIndex = nowIdx;
             ApplyCornerTempsForIndex(nowIdx);
         }
 
-        // UV za kliknutu točku
+        // UV from point
         Vector3 local = transform.InverseTransformPoint(trackedPoint);
         float u = (local.x / (planeWidth * transform.lossyScale.x)) + 0.5f;
         float v = (local.z / (planeDepth * transform.lossyScale.z)) + 0.5f;
@@ -774,7 +803,11 @@ public class HeatMapStaticWithJson : MonoBehaviour
         v = Mathf.Clamp01(v);
 
         var chart = lineChart.GetComponent<LineChart>();
-        if (chart == null) return;
+        if (chart == null)
+        {
+            Log("[LINECHART]", "ERROR: lineChart has no LineChart component at runtime.");
+            return;
+        }
 
         chart.ClearData();
         EnsureTwoSeries(chart);
@@ -783,7 +816,6 @@ public class HeatMapStaticWithJson : MonoBehaviour
         ForceYAxis10to40(chart);
         UpdateChartTitleWithDate(chart);
 
-        // ---------------- HISTORICAL (forecast OFF) ----------------
         if (!forecastEnabled)
         {
             SetForecastTmpLabelsEnabled(false);
@@ -793,47 +825,38 @@ public class HeatMapStaticWithJson : MonoBehaviour
             int pointCount = (endIdx - startIdx) + 1;
 
             int xCategoryCount = pointCount + 1;
-            int lastX = xCategoryCount - 1;
 
-            int L0 = 0;
-            int L1 = Mathf.Clamp(Mathf.RoundToInt(lastX * (6f / 30f)), 0, lastX);
-            int L2 = Mathf.Clamp(Mathf.RoundToInt(lastX * (12f / 30f)), 0, lastX);
-            int L3 = Mathf.Clamp(Mathf.RoundToInt(lastX * (18f / 30f)), 0, lastX);
-            int L4 = Mathf.Clamp(Mathf.RoundToInt(lastX * (24f / 30f)), 0, lastX);
-            int L5 = lastX;
+            Log("[LINECHART]", $"[HIST] Building chart: startIdx={startIdx} endIdx={endIdx} pointCount={pointCount} xCategoryCount={xCategoryCount} uv=({u:F3},{v:F3})");
 
             for (int xi = 0; xi < xCategoryCount; xi++)
             {
-                bool isLabeled = (xi == L0 || xi == L1 || xi == L2 || xi == L3 || xi == L4 || xi == L5);
-                string xLabel;
-
-                if (isLabeled)
-                {
-                    int measurementIndex = (xi >= pointCount) ? endIdx : (startIdx + xi);
-                    measurementIndex = Mathf.Clamp(measurementIndex, 0, data.measurements.Length - 1);
-                    xLabel = FormatTimeLabelFromIso(data.measurements[measurementIndex].timestamp);
-                }
-                else xLabel = new string('\u200B', xi + 1);
-
+                string xLabel = new string('\u200B', xi + 1);
                 chart.AddXAxisData(xLabel);
             }
+
+            int addedPoints = 0;
 
             for (int i = 0; i < pointCount; i++)
             {
                 int idx = Mathf.Clamp(startIdx + i, 0, data.measurements.Length - 1);
                 Measurement m = data.measurements[idx];
+
                 float y = BilinearInterpolation(u, v, m.temperature1, m.temperature2, m.temperature3, m.temperature4);
 
                 chart.AddData(0, y);
                 chart.AddData(1, 0f);
 
-                if (i == pointCount - 1) UpdateTemperatureText(y);
+                addedPoints++;
+
+                if (i == pointCount - 1)
+                    UpdateTemperatureText(y);
             }
+
+            Log("[LINECHART]", $"[HIST] Added data points: {addedPoints} (serie0) + {addedPoints} dummy(serie1)");
 
             ResetSerieData(chart, 0);
             ResetSerieData(chart, 1);
             IgnoreAllPoints(chart, 1);
-
             SetPointRed(chart, 0, pointCount - 1);
 
             var xAxis = chart.EnsureChartComponent<XAxis>();
@@ -842,17 +865,20 @@ public class HeatMapStaticWithJson : MonoBehaviour
             xAxis.interval = 0;
 
             chart.RefreshChart();
+
+            _chartRefreshTick++;
+            Log("[LINECHART]", $"[HIST] RefreshChart DONE tick#{_chartRefreshTick:0} chartSeriesCount={chart.series.Count}");
             return;
         }
 
-        // ---------------- FORECAST ON ----------------
+        // Forecast ON
         SetForecastTmpLabelsEnabled(true);
 
-        // Graph X: 61 tickova, a labele na samom grafu skrivamo (zero-width).
+        Log("[LINECHART]", $"[FORECAST] Building 61-point chart uv=({u:F3},{v:F3})");
+
         for (int xi = 0; xi < ForecastAxisCount; xi++)
             chart.AddXAxisData(new string('\u200B', xi + 1));
 
-        // za svaki i u 0..60: past+now (0..29) i future (29..58), ostalo ignore
         DateTime nowUtc = DateTime.UtcNow;
 
         for (int i = 0; i < ForecastAxisCount; i++)
@@ -861,7 +887,6 @@ public class HeatMapStaticWithJson : MonoBehaviour
 
             if (i <= 29)
             {
-                // past+now: now- (29-i) sekundi
                 DateTime ts = nowUtc.AddSeconds(-(29 - i));
                 float v1 = FindValueAtOrBefore(_sensor1Data, ts, _hasLast1, _last1);
                 float v2 = FindValueAtOrBefore(_sensor2Data, ts, _hasLast2, _last2);
@@ -871,7 +896,6 @@ public class HeatMapStaticWithJson : MonoBehaviour
             }
             else if (i <= 58)
             {
-                // future: now + (i-29) sekundi (i=29 je “now”, ali ovdje krećemo od 30 -> +1s)
                 int offs = i - 29;
                 DateTime ts = nowUtc.AddSeconds(offs);
 
@@ -880,42 +904,34 @@ public class HeatMapStaticWithJson : MonoBehaviour
                 float p3 = FindValueAtOrBefore(_pred3Data, ts, _hasPLast3, _pLast3);
                 float p4 = FindValueAtOrBefore(_pred4Data, ts, _hasPLast4, _pLast4);
 
-                // fallback na current ako predikcija nema ništa
                 if (!_hasPLast1 && _hasLast1) p1 = _last1;
                 if (!_hasPLast2 && _hasLast2) p2 = _last2;
                 if (!_hasPLast3 && _hasLast3) p3 = _last3;
                 if (!_hasPLast4 && _hasLast4) p4 = _last4;
 
-                // i=29 bi trebao biti current, ali ovdje i>29 pa je future ok
                 y = BilinearInterpolation(u, v, p1, p2, p3, p4);
             }
             else
             {
-                // 59..60 (ne koristi se)
                 y = 0f;
             }
 
-            chart.AddData(0, y); // historical
-            chart.AddData(1, y); // forecast
+            chart.AddData(0, y);
+            chart.AddData(1, y);
         }
 
         ResetSerieData(chart, 0);
         ResetSerieData(chart, 1);
 
-        // NOW = index 29
         UpdateTemperatureText(GetSerieY(chart, 0, 29));
 
-        // serie0: past + now (0..29)
         SetIgnoreRange(chart, 0, 30, 60, true);
-
-        // serie1: now + future (29..58)
         SetIgnoreRange(chart, 1, 0, 28, true);
         SetIgnoreRange(chart, 1, 59, 60, true);
 
         SetPointRed(chart, 0, 29);
         HideAllSymbols(chart, 1);
 
-        // naše TMP vrijeme: striktno sadašnje vrijeme +/- sekunde
         UpdateForecastTmpTextsFromNow();
 
         var xAxisF = chart.EnsureChartComponent<XAxis>();
@@ -924,6 +940,9 @@ public class HeatMapStaticWithJson : MonoBehaviour
         xAxisF.interval = 0;
 
         chart.RefreshChart();
+
+        _chartRefreshTick++;
+        Log("[LINECHART]", $"[FORECAST] RefreshChart DONE tick#{_chartRefreshTick:0} currCache=[{_sensor1Data.Count},{_sensor2Data.Count},{_sensor3Data.Count},{_sensor4Data.Count}] predCache=[{_pred1Data.Count},{_pred2Data.Count},{_pred3Data.Count},{_pred4Data.Count}]");
     }
 
     private void ApplyCornerTempsForIndex(int idx)
@@ -938,7 +957,6 @@ public class HeatMapStaticWithJson : MonoBehaviour
         angle4 = m.temperature4;
     }
 
-    // ===== TMP label logic =====
     private void SetForecastTmpLabelsEnabled(bool enabled)
     {
         if (labelC != null) labelC.enabled = enabled;
@@ -948,7 +966,6 @@ public class HeatMapStaticWithJson : MonoBehaviour
         if (labelR2 != null) labelR2.enabled = enabled;
     }
 
-    // FORECAST TMP: u forecast modu ne čitamo iz JSON timestampova, nego iz “sada” (da uvijek prati real-time)
     private void UpdateForecastTmpTextsFromNow()
     {
         DateTime nowLocal = DateTime.Now;
@@ -966,7 +983,6 @@ public class HeatMapStaticWithJson : MonoBehaviour
         if (labelR2 != null) labelR2.text = tR2.ToString("HH:mm:ss");
     }
 
-    // ======== Serie helpers ========
     private void ResetSerieData(LineChart chart, int serieIndex)
     {
         if (chart == null || chart.series == null || chart.series.Count <= serieIndex) return;
@@ -1000,7 +1016,6 @@ public class HeatMapStaticWithJson : MonoBehaviour
         if (chart == null || chart.series == null || chart.series.Count < 2) return;
 
         var s = chart.series[1];
-
         s.itemStyle.show = true;
         s.itemStyle.color = forecastColor;
 
@@ -1083,16 +1098,6 @@ public class HeatMapStaticWithJson : MonoBehaviour
         return (float)serie.data[pointIndex].data[1];
     }
 
-    // ======== Formatting ========
-    private string FormatTimeLabelFromIso(string isoTimestamp)
-    {
-        if (!DateTime.TryParse(isoTimestamp, CultureInfo.InvariantCulture,
-                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out DateTime utc))
-            return isoTimestamp;
-
-        return utc.ToLocalTime().ToString("HH:mm:ss");
-    }
-
     private void ForceYAxis10to40(LineChart chart)
     {
         var yAxis = chart.EnsureChartComponent<YAxis>();
@@ -1111,7 +1116,7 @@ public class HeatMapStaticWithJson : MonoBehaviour
         title.text = $"Time Line - {DateTime.Now:dd/MM/yyyy}";
     }
 
-    // ======== AimOnGrip compatibility ========
+    // Compatibility
     public float GetTemperatureAtUV(Vector2 uv)
     {
         return BilinearInterpolation(uv.x, uv.y, angle1, angle2, angle3, angle4);
@@ -1127,16 +1132,21 @@ public class HeatMapStaticWithJson : MonoBehaviour
 
     public void UpdateTemperatureText(float temperature)
     {
-        AimOnGrip aimScript = FindObjectOfType<AimOnGrip>();
-        if (aimScript != null)
-            aimScript.UpdateTemperatureDisplay(temperature);
+        Log("[TEXT]", $"UpdateTemperatureText({temperature:F2}) -> finding AimOnGrip");
+
+        AimOnGrip aimScript = FindObjectOfType<AimOnGrip>(true);
+        if (aimScript == null)
+        {
+            Log("[TEXT]", "ERROR: AimOnGrip NOT found in scene (FindObjectOfType returned null).");
+            return;
+        }
+
+        Log("[TEXT]", $"AimOnGrip found: '{aimScript.name}' active={aimScript.gameObject.activeInHierarchy}. Calling UpdateTemperatureDisplay...");
+        aimScript.UpdateTemperatureDisplay(temperature);
     }
 
-    // ======== Heatmap/Mesh ========
-    public void ToggleHeatmap()
-    {
-        SetHeatmapEnabled(!heatmapEnabled);
-    }
+    // Heatmap toggles
+    public void ToggleHeatmap() => SetHeatmapEnabled(!heatmapEnabled);
 
     public void SetHeatmapEnabled(bool enabled)
     {
@@ -1155,7 +1165,7 @@ public class HeatMapStaticWithJson : MonoBehaviour
         if (!_initialized) return;
         if (originalMesh == null || originalMaterial == null)
         {
-            Debug.LogError("[HeatMap] Ne mogu aktivirati heatmap jer originalMesh/originalMaterial nije validan.");
+            Debug.LogError("[HEATMAP] ERROR: Cannot activate heatmap (originalMesh/originalMaterial invalid).");
             return;
         }
 
@@ -1176,6 +1186,7 @@ public class HeatMapStaticWithJson : MonoBehaviour
         }
 
         GenerateHeatmap();
+        Log("[HEATMAP]", "ActivateHeatmap OK -> texture/material applied.");
     }
 
     private void DeactivateHeatmap()
@@ -1195,6 +1206,7 @@ public class HeatMapStaticWithJson : MonoBehaviour
             _mc.sharedMesh = originalMesh;
 
         meshGenerated = false;
+        Log("[HEATMAP]", "DeactivateHeatmap done.");
     }
 
     public void GenerateMeshFromExistingPlane()
@@ -1223,9 +1235,13 @@ public class HeatMapStaticWithJson : MonoBehaviour
                 float uu = x / (float)meshSegmentsX;
                 float vv = z / (float)meshSegmentsZ;
 
+                float baseY = 0f;
+                if (originalMesh != null && originalMesh.vertices != null && originalMesh.vertices.Length > 0)
+                    baseY = originalMesh.vertices[Mathf.Clamp(i, 0, originalMesh.vertices.Length - 1)].y;
+
                 vertices[i] = new Vector3(
                     (uu - 0.5f) * planeWidth,
-                    originalMesh.vertices[Mathf.Clamp(i, 0, originalMesh.vertices.Length - 1)].y,
+                    baseY,
                     (vv - 0.5f) * planeDepth
                 );
 
@@ -1259,6 +1275,8 @@ public class HeatMapStaticWithJson : MonoBehaviour
         _mc.sharedMesh = mesh;
 
         meshGenerated = true;
+
+        Log("[HEATMAP]", $"GenerateMeshFromExistingPlane OK. verts={vertices.Length} tris={triangles.Length / 3}");
     }
 
     void SaveCurrentAngles()
@@ -1319,7 +1337,6 @@ public class HeatMapStaticWithJson : MonoBehaviour
         return Mathf.Lerp(Mathf.Lerp(q11, q21, uu), Mathf.Lerp(q12, q22, uu), vv);
     }
 
-    // ===== helpers: parsing numbers & timestamps =====
     private float GetFloat(Dictionary<string, object> dict, string key)
     {
         if (!dict.TryGetValue(key, out object obj)) return 0f;
@@ -1364,8 +1381,7 @@ public class HeatMapStaticWithJson : MonoBehaviour
         public float temperature4;
     }
 
-    // ===== MiniJSON (embedded) =====
-    // ParseObject “pojede” zarez nakon svakog paira.
+    // ===== MiniJSON =====
     private static class MiniJSON
     {
         public static class Json

@@ -23077,7 +23077,6 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 576475487}
-  - component: {fileID: 576475486}
   - component: {fileID: 576475485}
   - component: {fileID: 576475488}
   m_Layer: 0
@@ -23104,29 +23103,6 @@ MonoBehaviour:
   setScaleToOne: 1
   deletePreviousAnchor: 1
   waitBeforeDeleteOldSeconds: 0.2
---- !u!114 &576475486
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 576475484}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: a7f151e80e14ca64e903ecd38792c32a, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  template: {fileID: 650330272}
-  floorName: FLOOR
-  planeMeshName: PlaneMesh(PrefabSpawner Clone)
-  cubeName: Cube
-  renameToFloor: 1
-  floorObjectName: Floor
-  targetLayerName: Environment
-  applyLayerRecursively: 1
-  retryEverySeconds: 0.25
-  giveUpAfterSeconds: 20
-  enableHeatmapOnBind: 1
 --- !u!4 &576475487
 Transform:
   m_ObjectHideFlags: 0
@@ -26219,102 +26195,6 @@ Transform:
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 1968106539}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
---- !u!1 &650330271
-GameObject:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  serializedVersion: 6
-  m_Component:
-  - component: {fileID: 650330273}
-  - component: {fileID: 650330272}
-  m_Layer: 0
-  m_Name: HeatmapTemplate
-  m_TagString: Untagged
-  m_Icon: {fileID: 0}
-  m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
-  m_IsActive: 0
---- !u!114 &650330272
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 650330271}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 0973115d96c94a04c85f6447f648f11f, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  angle1: 10.5
-  angle2: 15.4
-  angle3: 12.2
-  angle4: 10.8
-  textureResolution: 1024
-  autoUpdate: 1
-  meshSegmentsX: 80
-  meshSegmentsZ: 80
-  minGlobalTemp: 10
-  maxGlobalTemp: 40
-  coldColor: {r: 0, g: 0, b: 1, a: 1}
-  midColor: {r: 1, g: 0.5, b: 0, a: 1}
-  warmColor: {r: 1, g: 0, b: 0, a: 1}
-  labelC: {fileID: 299672185}
-  labelL1: {fileID: 1908100978}
-  labelL2: {fileID: 1045105254}
-  labelR1: {fileID: 2007142095}
-  labelR2: {fileID: 1368527631}
-  debugStatus: {fileID: 0}
-  heatmapEnabled: 1
-  baseUrl: https://djx.entlab.hr
-  trustedPath: /m2m/trusted/data
-  usr: FER_Departments
-  latestNCount: 30
-  resParamName: res
-  res1: dipProj25_temperature1
-  res2: dipProj25_temperature2
-  res3: dipProj25_temperature3
-  res4: dipProj25_temperature4
-  valueKey: temperature
-  latestNCountForecast: 30
-  resPred1: dipProj25_temperature_prediction1
-  resPred2: dipProj25_temperature_prediction2
-  resPred3: dipProj25_temperature_prediction3
-  resPred4: dipProj25_temperature_prediction4
-  authorization: PREAUTHENTICATED
-  requesterId: digiphy1
-  requesterType: domainApplication
-  accept: application/vnd.ericsson.simple.output+json;version=1.0
-  pollSeconds: 5
-  requestTimeoutSeconds: 15
-  acceptAnyCertificate: 1
-  debugLogs: 1
-  debugBodyMaxChars: 600
-  windowSeconds: 30
-  forecastSeconds: 29
-  maxCachedSamplesPerSensor: 600
-  lineChart: {fileID: 1148646845}
-  forecastColor: {r: 0.5, g: 0.5, b: 0.5, a: 1}
-  dashLength: 6
-  gapLength: 4
-  dotLength: 0
---- !u!4 &650330273
-Transform:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 650330271}
-  serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 1.1266489, y: 1.6801355, z: 1.2467266}
-  m_LocalScale: {x: 1, y: 1, z: 1}
-  m_ConstrainProportionsScale: 0
-  m_Children: []
-  m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1001 &652227959
 PrefabInstance:
@@ -45423,6 +45303,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   debugLogs: 1
   debugRaycastWhileGripping: 1
+  debugTextEveryUpdate: 0
   aimObject: {fileID: 214691324}
   rightHandAnchor: {fileID: 722105605}
   defaultDistance: 0.25
@@ -88692,5 +88573,4 @@ SceneRoots:
   - {fileID: 5208890}
   - {fileID: 56689704}
   - {fileID: 913031149}
-  - {fileID: 650330273}
   - {fileID: 576475487}

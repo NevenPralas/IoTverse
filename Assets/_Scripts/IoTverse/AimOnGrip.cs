@@ -6,7 +6,8 @@ public class AimOnGrip : MonoBehaviour
 {
     [Header("Debug")]
     [SerializeField] private bool debugLogs = true;
-    [SerializeField] private bool debugRaycastWhileGripping = true; // ako te spam-a, stavi false
+    [SerializeField] private bool debugRaycastWhileGripping = true;
+    [SerializeField] private bool debugTextEveryUpdate = false;
 
     [Header("References")]
     [SerializeField] private GameObject aimObject;
@@ -42,39 +43,43 @@ public class AimOnGrip : MonoBehaviour
     public Material defaultAimMaterial;
     public float flashDuration = 1f;
 
+    [Header("UI Text (TMP)")]
+    public GameObject text;
+
     private Vector3 velocity;
     private bool isVisible = false;
     private bool flashing = false;
 
-    public GameObject text;
     private SharedAimCanvasState sharedState;
 
-    // --- Debug state (anti-spam) ---
+    // Debug state anti-spam
     private bool _lastGripHeld = false;
     private float _lastGripValue = -999f;
     private float _lastIndexValue = -999f;
-    private bool _lastA = false;
     private OVRInput.Controller _lastActive = OVRInput.Controller.None;
 
     private bool _lastHit = false;
     private string _lastHitName = "";
     private int _lastHitLayer = -999;
 
-    void Log(string msg)
+    private float _textProbeTimer = 0f;
+
+    private void Log(string tag, string msg)
     {
-        if (debugLogs)
-            Debug.Log("[AimOnGrip] " + msg);
+        if (!debugLogs) return;
+        Debug.Log($"{tag} {msg}");
     }
 
     void Start()
     {
-        Log("Start() called.");
+        Log("[AIM]", "Start()");
 
+        // aimObject init
         if (aimObject != null)
         {
             aimObject.SetActive(true);
             aimObject.transform.localScale = hiddenScale;
-            Log("Aim object initialized.");
+            Log("[AIM]", $"Aim object OK: '{aimObject.name}'");
 
             if (defaultAimMaterial == null)
             {
@@ -82,85 +87,95 @@ public class AimOnGrip : MonoBehaviour
                 if (r != null)
                 {
                     defaultAimMaterial = r.material;
-                    Log("Default aim material cached from aimObject renderer.");
+                    Log("[AIM]", "Cached defaultAimMaterial from aimObject renderer.");
                 }
                 else
                 {
-                    Log("WARNING: aimObject has no Renderer, can't cache defaultAimMaterial.");
+                    Log("[AIM]", "WARNING: aimObject has no Renderer, can't cache defaultAimMaterial.");
                 }
             }
         }
         else
         {
-            Debug.LogError("[AimOnGrip] AimObject is NULL!");
+            Debug.LogError("[AIM] ERROR: AimObject is NULL!");
         }
 
+        // rightHandAnchor auto-find
         if (rightHandAnchor == null)
         {
             var r = GameObject.Find("RightHandAnchor");
             if (r != null)
             {
                 rightHandAnchor = r.transform;
-                Log("RightHandAnchor auto-found via GameObject.Find('RightHandAnchor').");
+                Log("[AIM]", $"RightHandAnchor auto-found. Path='{GetTransformPath(rightHandAnchor)}'");
             }
             else
             {
-                Debug.LogError("[AimOnGrip] RightHandAnchor NOT found! (GameObject named 'RightHandAnchor' missing)");
+                Debug.LogError("[AIM] ERROR: RightHandAnchor NOT found! (GameObject named 'RightHandAnchor' missing)");
             }
         }
-
-        if (rightHandAnchor != null)
+        else
         {
-            Log($"RightHandAnchor OK: name='{rightHandAnchor.name}' path='{GetTransformPath(rightHandAnchor)}'");
+            Log("[AIM]", $"RightHandAnchor set via inspector. Path='{GetTransformPath(rightHandAnchor)}'");
         }
 
+        // laser material cache
         if (laserLine != null && defaultLaserMaterial == null)
         {
             defaultLaserMaterial = laserLine.material;
-            Log("Default laser material cached from laserLine.");
+            Log("[AIM]", "Cached defaultLaserMaterial from laserLine.");
         }
 
+        // Shared state find
         sharedState = FindObjectOfType<SharedAimCanvasState>(true);
         if (sharedState != null)
-            Log("SharedAimCanvasState found in scene.");
+            Log("[AIM]", $"SharedAimCanvasState found: '{sharedState.name}' activeInHierarchy={sharedState.gameObject.activeInHierarchy}");
         else
-            Log("WARNING: SharedAimCanvasState NOT found on Start().");
+            Log("[AIM]", "WARNING: SharedAimCanvasState NOT found on Start().");
+
+        // Text probe
+        ProbeText("[TEXT]");
     }
 
     void Update()
     {
-        // --- Ensure sharedState exists ---
+        // periodically probe text ref (AR issue)
+        _textProbeTimer += Time.deltaTime;
+        if (_textProbeTimer >= 1f)
+        {
+            _textProbeTimer = 0f;
+            ProbeText("[TEXT]");
+        }
+
+        // Ensure sharedState exists
         if (sharedState == null)
         {
             sharedState = FindObjectOfType<SharedAimCanvasState>(true);
             if (sharedState != null)
-                Log("SharedAimCanvasState found during Update().");
+                Log("[AIM]", "SharedAimCanvasState found during Update().");
         }
 
-        // --- Input ---
+        // Input
         var active = OVRInput.GetActiveController();
-
-        float gripValue = OVRInput.Get(OVRInput.Axis1D.SecondaryHandTrigger);   // "grip" (hand trigger) na Touch kontrolerima
-        float indexValue = OVRInput.Get(OVRInput.Axis1D.SecondaryIndexTrigger); // "trigger" (index trigger)
-
+        float gripValue = OVRInput.Get(OVRInput.Axis1D.SecondaryHandTrigger);
+        float indexValue = OVRInput.Get(OVRInput.Axis1D.SecondaryIndexTrigger);
         bool gripHeld = gripValue > 0.12f;
-
         bool aDown = OVRInput.GetDown(OVRInput.Button.One);
 
-        // Log input only on change (anti-spam)
+        // Log input only on change
         if (active != _lastActive ||
             Mathf.Abs(gripValue - _lastGripValue) > 0.05f ||
             Mathf.Abs(indexValue - _lastIndexValue) > 0.05f ||
             gripHeld != _lastGripHeld)
         {
-            Log($"Input: ActiveController={active} | SecondaryHandTrigger(grip?)={gripValue:F2} held={gripHeld} | SecondaryIndexTrigger(trigger)={indexValue:F2}");
+            Log("[AIM]", $"Input: Active={active} | Grip={gripValue:F2} held={gripHeld} | Trigger={indexValue:F2}");
             _lastActive = active;
             _lastGripValue = gripValue;
             _lastIndexValue = indexValue;
             _lastGripHeld = gripHeld;
         }
 
-        // --- Raycast + targets ---
+        // Raycast
         Vector3 targetPos = Vector3.zero;
         Quaternion targetRot = Quaternion.identity;
         RaycastHit hitInfo = new RaycastHit();
@@ -178,75 +193,63 @@ public class AimOnGrip : MonoBehaviour
                     targetPos = hitInfo.point + hitInfo.normal * 0.01f;
                     targetRot = Quaternion.LookRotation(-hitInfo.normal);
                 }
-                else
-                {
-                    // fallback (ako želiš): možeš koristiti defaultDistance, ali zadržavam istu funkcionalnost kao prije
-                    // targetPos = rightHandAnchor.position + rightHandAnchor.forward * defaultDistance;
-                    // targetRot = rightHandAnchor.rotation;
-                }
             }
         }
 
-        // Raycast log: samo kad se promijeni hit/miss ili objekt koji pogađa
+        // Raycast log on change
         if (debugLogs && debugRaycastWhileGripping && gripHeld && rightHandAnchor != null)
         {
             if (hitEnvironment != _lastHit ||
-                (hitEnvironment && (hitInfo.collider != null) &&
+                (hitEnvironment && hitInfo.collider != null &&
                  (hitInfo.collider.name != _lastHitName || hitInfo.collider.gameObject.layer != _lastHitLayer)))
             {
                 if (hitEnvironment && hitInfo.collider != null)
                 {
-                    Log($"Raycast HIT: '{hitInfo.collider.name}' layer={hitInfo.collider.gameObject.layer} point={hitInfo.point} normal={hitInfo.normal}");
+                    Log("[AIM]", $"Raycast HIT: '{hitInfo.collider.name}' layer={hitInfo.collider.gameObject.layer} point={hitInfo.point}");
                     _lastHitName = hitInfo.collider.name;
                     _lastHitLayer = hitInfo.collider.gameObject.layer;
                 }
                 else
                 {
-                    Log($"Raycast MISS: origin={rightHandAnchor.position} forward={rightHandAnchor.forward} mask={raycastMask.value} maxDist={raycastMaxDistance}");
+                    Log("[AIM]", $"Raycast MISS: origin={rightHandAnchor.position} forward={rightHandAnchor.forward} mask={raycastMask.value} maxDist={raycastMaxDistance}");
                     _lastHitName = "";
                     _lastHitLayer = -999;
                 }
-
                 _lastHit = hitEnvironment;
             }
         }
 
-        // SHOW / HIDE (ista logika kao prije: mora biti gripHeld AND hitEnvironment)
         bool shouldShow = gripHeld && hitEnvironment;
 
         if (shouldShow && !isVisible)
         {
             isVisible = true;
-            Log("Aim became VISIBLE.");
-
-            if (useHaptics)
-                StartCoroutine(PulseHaptics(hapticStrength, hapticDuration));
+            Log("[AIM]", "Aim VISIBLE");
+            if (useHaptics) StartCoroutine(PulseHaptics(hapticStrength, hapticDuration));
         }
         else if (!shouldShow && isVisible)
         {
             isVisible = false;
-            Log("Aim became HIDDEN.");
+            Log("[AIM]", "Aim HIDDEN");
         }
 
-        // CLICK (A while gripping)
+        // Click A while gripping
         if (gripHeld && aDown)
         {
-            Log("A button pressed while gripping -> Flash + (if hit) send point.");
-
+            Log("[AIM]", "A pressed while gripping -> Flash + send point (if hit).");
             StartCoroutine(FlashMaterials());
 
             if (hitEnvironment)
             {
-                Log("Raycast hit -> sending point to SharedAimCanvasState.");
-
+                Log("[AIM]", $"Sending point to SharedAimCanvasState: {hitInfo.point}");
                 if (sharedState != null)
                     sharedState.RequestSetPoint(hitInfo.point);
                 else
-                    Debug.LogError("[AimOnGrip] SharedAimCanvasState missing when trying to send point!");
+                    Debug.LogError("[AIM] ERROR: SharedAimCanvasState missing when trying to send point!");
             }
             else
             {
-                Log("A pressed but NO surface hit (hitEnvironment=false).");
+                Log("[AIM]", "A pressed but NO surface hit.");
             }
         }
 
@@ -298,12 +301,35 @@ public class AimOnGrip : MonoBehaviour
                 laserLine.SetPosition(1, targetPos);
             }
         }
+
+        if (debugTextEveryUpdate)
+        {
+            // optional: spammy, but good for AR debug
+            ProbeText("[TEXT]");
+        }
+    }
+
+    private void ProbeText(string tag)
+    {
+        if (text == null)
+        {
+            Log(tag, "text GameObject is NULL (no reference).");
+            return;
+        }
+
+        var tmp = text.GetComponent<TextMeshProUGUI>();
+        if (tmp == null)
+        {
+            Log(tag, $"text GameObject='{text.name}' has NO TextMeshProUGUI component.");
+            return;
+        }
+
+        Log(tag, $"text OK: go='{text.name}' enabled={tmp.enabled} activeInHierarchy={text.activeInHierarchy} current='{tmp.text}'");
     }
 
     private IEnumerator PulseHaptics(float s, float d)
     {
-        Log($"Haptics pulse triggered. strength={s:F2} duration={d:F2}");
-
+        Log("[AIM]", $"Haptics: strength={s:F2} duration={d:F2}");
         OVRInput.SetControllerVibration(1f, s, OVRInput.Controller.RTouch);
         yield return new WaitForSeconds(d);
         OVRInput.SetControllerVibration(0f, 0f, OVRInput.Controller.RTouch);
@@ -313,12 +339,12 @@ public class AimOnGrip : MonoBehaviour
     {
         if (flashing)
         {
-            Log("Flash skipped (already flashing).");
+            Log("[AIM]", "Flash skipped (already flashing).");
             yield break;
         }
 
         flashing = true;
-        Log("Flash started.");
+        Log("[AIM]", "Flash START");
 
         if (laserLine) laserLine.material = flashMaterial;
 
@@ -339,25 +365,28 @@ public class AimOnGrip : MonoBehaviour
         }
 
         flashing = false;
-        Log("Flash ended.");
+        Log("[AIM]", "Flash END");
     }
 
     public void UpdateTemperatureDisplay(float temperature)
     {
-        Log($"Temperature updated: {temperature:F2}°C");
+        Log("[TEXT]", $"UpdateTemperatureDisplay({temperature:F2}) called.");
 
-        if (text != null)
+        if (text == null)
         {
-            var tmp = text.GetComponent<TextMeshProUGUI>();
-            if (tmp != null)
-                tmp.text = $"Temperature = {temperature:F2}°C";
-            else
-                Log("WARNING: Text object exists but has no TextMeshProUGUI component.");
+            Log("[TEXT]", "WARNING: text reference is NULL -> cannot display temperature.");
+            return;
         }
-        else
+
+        var tmp = text.GetComponent<TextMeshProUGUI>();
+        if (tmp == null)
         {
-            Log("WARNING: Text object is NULL!");
+            Log("[TEXT]", $"WARNING: text='{text.name}' has no TextMeshProUGUI component.");
+            return;
         }
+
+        tmp.text = $"Temperature = {temperature:F2}°C";
+        Log("[TEXT]", $"TMP updated OK -> '{tmp.text}' (enabled={tmp.enabled}, active={text.activeInHierarchy})");
     }
 
     private static string GetTransformPath(Transform t)
