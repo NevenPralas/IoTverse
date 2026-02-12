@@ -23079,6 +23079,7 @@ GameObject:
   - component: {fileID: 576475487}
   - component: {fileID: 576475485}
   - component: {fileID: 576475488}
+  - component: {fileID: 576475489}
   m_Layer: 0
   m_Name: Managers
   m_TagString: Untagged
@@ -23135,6 +23136,21 @@ MonoBehaviour:
   retryEverySeconds: 1
   giveUpAfterSeconds: 15
   explicitLoader: {fileID: 913031148}
+--- !u!114 &576475489
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 576475484}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f7eed4b39d0380945b2fa98da9443f68, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  pivot: {fileID: 1884515436}
+  snapPivotToAnchor: 1
+  setScaleToOne: 1
 --- !u!1 &576550251
 GameObject:
   m_ObjectHideFlags: 0
@@ -37327,7 +37343,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   _anchorPrefab: {fileID: 789684486510353890, guid: d257e772d439e664db46073b17aadedf, type: 3}
-  _followHand: 1
+  _followHand: 0
 --- !u!114 &913031148
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -47695,6 +47711,18 @@ MonoBehaviour:
       m_Calls:
       - m_Target: {fileID: 576475485}
         m_TargetAssemblyTypeName: AnchorAutoAttach, Assembly-CSharp
+        m_MethodName: OnAnchorCreateCompleted
+        m_Mode: 0
+        m_Arguments:
+          m_ObjectArgument: {fileID: 0}
+          m_ObjectArgumentAssemblyTypeName: UnityEngine.Object, UnityEngine
+          m_IntArgument: 0
+          m_FloatArgument: 0
+          m_StringArgument: 
+          m_BoolArgument: 0
+        m_CallState: 2
+      - m_Target: {fileID: 576475489}
+        m_TargetAssemblyTypeName: AnchorPersistOne, Assembly-CSharp
         m_MethodName: OnAnchorCreateCompleted
         m_Mode: 0
         m_Arguments:
