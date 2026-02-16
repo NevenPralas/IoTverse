@@ -346,21 +346,23 @@ public class NoiseManager : MonoBehaviour
             // Collect all data from all sensors
             List<(NoiseData data, int sensorIndex)> allData = new List<(NoiseData, int)>();
 
-            for (int sensorIndex = 0; sensorIndex < spheres.Length; sensorIndex++)
+            // // Only fetch for sensor 2, ignore other, for 
+            // for (int sensorIndex = 0; sensorIndex < spheres.Length; sensorIndex++)
+            // {
+            if (mockDataToggle.isOn)
             {
-                if (mockDataToggle.isOn)
-                {
-                    NoiseData[] data = generateMockData(sensorIndex);
-                    foreach (NoiseData noiseData in data)
-                        allData.Add((noiseData, sensorIndex));
-                }
-                else
-                {
-                    NoiseData[] data = await GetCurrentNoise(sensorIndex);
-                    foreach (NoiseData noiseData in data)
-                        allData.Add((noiseData, sensorIndex));
-                }
+                NoiseData[] data = generateMockData(3); // hardcode for only sensor 2
+                foreach (NoiseData noiseData in data)
+                    allData.Add((noiseData, 3));
             }
+            else
+            {
+                Debug.Log($"[aaaa] Fetching data for sensor {3}...");
+                NoiseData[] data = await GetCurrentNoise(3);
+                foreach (NoiseData noiseData in data)
+                    allData.Add((noiseData, 3));
+            }
+            // }
 
             // Sort by timestamp before enqueueing
             allData.Sort((a, b) => a.data.timestamp.CompareTo(b.data.timestamp));
@@ -554,6 +556,7 @@ public class NoiseManager : MonoBehaviour
                 }
 
                 string json = request.downloadHandler.text;
+                Debug.LogWarning($"Received JSON for sensor {sensorIndex}:\n{json}");
                 return ParseNoiseDataArray(json);
             }
         }

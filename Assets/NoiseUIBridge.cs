@@ -3,6 +3,7 @@
 public class NoiseUIBridge : MonoBehaviour
 {
     private SharedNoiseCanvasState _state;
+    private NoiseManager _noiseManager;
 
     private void Awake()
     {
@@ -29,23 +30,70 @@ public class NoiseUIBridge : MonoBehaviour
         return _state != null;
     }
 
+    private bool LazyFindNoiseManager()
+    {
+        if (_noiseManager != null) return true;
+
+        _noiseManager = FindObjectOfType<NoiseManager>(true);
+        return _noiseManager != null;
+    }
+
     // --- S1-S4 toggles (OnValueChanged bool) ---
     public void SetSphere0(bool on)
     {
         Debug.Log($"[NoiseUIBridge] SetSphere0({on})");
-        if (!LazyFindState()) return;
-        _state.RequestSetSphere(0, on);
+        if (LazyFindState())
+        {
+            _state.RequestSetSphere(0, on);
+        }
+        else if (LazyFindNoiseManager())
+        {
+            _noiseManager.OnSphereToggleChanged(0, on);
+        }
     }
-    public void SetSphere1(bool on) { if (!LazyFindState()) return; _state.RequestSetSphere(1, on); }
-    public void SetSphere2(bool on) { if (!LazyFindState()) return; _state.RequestSetSphere(2, on); }
-    public void SetSphere3(bool on) { if (!LazyFindState()) return; _state.RequestSetSphere(3, on); }
+    public void SetSphere1(bool on) 
+    { 
+        if (LazyFindState()) _state.RequestSetSphere(1, on);
+        else if (LazyFindNoiseManager()) _noiseManager.OnSphereToggleChanged(1, on);
+    }
+    public void SetSphere2(bool on) 
+    { 
+        if (LazyFindState()) _state.RequestSetSphere(2, on);
+        else if (LazyFindNoiseManager()) _noiseManager.OnSphereToggleChanged(2, on);
+    }
+    public void SetSphere3(bool on) 
+    { 
+        if (LazyFindState()) _state.RequestSetSphere(3, on);
+        else if (LazyFindNoiseManager()) _noiseManager.OnSphereToggleChanged(3, on);
+    }
 
     // --- Sensor buttons (OnClick) ---
-    public void SelectSensor0() { if (!LazyFindState()) return; _state.RequestSetActiveSensor(0); }
-    public void SelectSensor1() { if (!LazyFindState()) return; _state.RequestSetActiveSensor(1); }
-    public void SelectSensor2() { if (!LazyFindState()) return; _state.RequestSetActiveSensor(2); }
-    public void SelectSensor3() { if (!LazyFindState()) return; _state.RequestSetActiveSensor(3); }
+    public void SelectSensor0() 
+    { 
+        if (LazyFindState()) _state.RequestSetActiveSensor(0);
+        else if (LazyFindNoiseManager()) _noiseManager.OnSensorSelected(0);
+    }
+    public void SelectSensor1() 
+    { 
+        if (LazyFindState()) _state.RequestSetActiveSensor(1);
+        else if (LazyFindNoiseManager()) _noiseManager.OnSensorSelected(1);
+    }
+    public void SelectSensor2() 
+    { 
+        Debug.Log("[NoiseUIBridge] SelectSensor2 clicked");
+        if (LazyFindState()) _state.RequestSetActiveSensor(2);
+        else if (LazyFindNoiseManager()) _noiseManager.OnSensorSelected(2);
+    }
+    public void SelectSensor3() 
+    { 
+        if (LazyFindState()) _state.RequestSetActiveSensor(3);
+        else if (LazyFindNoiseManager()) _noiseManager.OnSensorSelected(3);
+    }
 
     // --- Mock toggle (OnValueChanged bool) ---
-    public void SetMock(bool on) { if (!LazyFindState()) return; _state.RequestSetMock(on); }
+    public void SetMock(bool on) 
+    { 
+        if (LazyFindState()) _state.RequestSetMock(on);
+        else if (LazyFindNoiseManager()) _noiseManager.OnMockToggleChanged(on);
+    }
 }
