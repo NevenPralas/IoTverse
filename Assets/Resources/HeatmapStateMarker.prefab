@@ -63,7 +63,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 2feeb7b5dd2c3bb49a7b328dbc4e890c, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  floorName: Floor
+  floorName: PraviFloor
   defaultHeatmapOn: 1
   _HeatmapOn:
     _value: 1
