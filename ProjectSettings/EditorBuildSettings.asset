@@ -6,14 +6,8 @@ EditorBuildSettings:
   serializedVersion: 2
   m_Scenes:
   - enabled: 1
-    path: Assets/_Scenes/Welcome.unity
-    guid: b496eddbb05411447af0a761fd94ccea
-  - enabled: 1
     path: Assets/_Scenes/Meta_ar.unity
     guid: 33c79783b85027d49b4cd4d5e0513e3a
-  - enabled: 1
-    path: Assets/_Scenes/Meta_vr.unity
-    guid: 33058054eff41a84091606d7ee4da4b9
   m_configObjects:
     UnityEditor.XR.ARCore.ARCoreSettings: {fileID: 11400000, guid: 78a3f409f55863b48b24512f3e01bdb0, type: 2}
     com.unity.xr.arfoundation.simulation_settings: {fileID: 11400000, guid: 1881356db974591419a152cd7023bce8, type: 2}
