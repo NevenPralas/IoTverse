@@ -18,7 +18,6 @@ namespace Digiphy
             ChessLabNew = 4
         }
 
-        [SerializeField] private GameObject _chessPositionsPrefab;
         [SerializeField] private GameObject _synchronizationLocationPrefab;
         [SerializeField] private RoomType _roomType;
         [SerializeField] private Vector3 _chessOffest;

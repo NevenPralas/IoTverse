@@ -9,7 +9,6 @@ namespace Digiphy
         [SerializeField] private Transform _player;
         [SerializeField] private Transform _playerAnchor;
         [SerializeField] private Transform _synchronizerExpectedLocation;
-        [SerializeField] private GameObject _tutorial;
 
         public void SynchronizeRoomWithAr(NetworkRunner runner, Transform locationProvider)
         {

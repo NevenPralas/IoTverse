@@ -37694,7 +37694,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 7d55994e4924445409bba5766d525ce9, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  _chessPositionsPrefab: {fileID: 120545577773263878, guid: 72279db79e966784caab46f9eb9b63e0, type: 3}
   _synchronizationLocationPrefab: {fileID: 6595554126162911961, guid: a2b9a926cde9bbb43909e617c71da572, type: 3}
   _roomType: 1
   _chessOffest: {x: 0, y: -0.04, z: 0}
@@ -43127,11 +43126,11 @@ RectTransform:
   - {fileID: 2044033052}
   m_Father: {fileID: 1557298593}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0.5, y: 0.5}
-  m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 0, y: 0}
+  m_AnchorMin: {x: 0, y: 1}
+  m_AnchorMax: {x: 0, y: 1}
+  m_AnchoredPosition: {x: 290, y: -150}
   m_SizeDelta: {x: 0, y: 0}
-  m_Pivot: {x: 0.5, y: 0.5}
+  m_Pivot: {x: 0, y: 1}
 --- !u!114 &1669789702
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -44679,11 +44678,11 @@ RectTransform:
   m_Children: []
   m_Father: {fileID: 1845121591}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 1, y: 0.5}
-  m_AnchorMax: {x: 1, y: 0.5}
-  m_AnchoredPosition: {x: -2, y: 0}
+  m_AnchorMin: {x: 0, y: 1}
+  m_AnchorMax: {x: 0, y: 1}
+  m_AnchoredPosition: {x: 2, y: -0}
   m_SizeDelta: {x: 0, y: 0}
-  m_Pivot: {x: 1, y: 0.5}
+  m_Pivot: {x: 0, y: 1}
 --- !u!114 &1720602054
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -44711,7 +44710,7 @@ MonoBehaviour:
     m_BestFit: 0
     m_MinSize: 10
     m_MaxSize: 40
-    m_Alignment: 5
+    m_Alignment: 0
     m_AlignByGeometry: 0
     m_RichText: 1
     m_HorizontalOverflow: 1
@@ -48499,11 +48498,11 @@ RectTransform:
   - {fileID: 314809688}
   m_Father: {fileID: 1557298593}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 1, y: 0.5}
-  m_AnchorMax: {x: 1, y: 0.5}
-  m_AnchoredPosition: {x: -290, y: 0}
+  m_AnchorMin: {x: 0, y: 1}
+  m_AnchorMax: {x: 0, y: 1}
+  m_AnchoredPosition: {x: 290, y: -150}
   m_SizeDelta: {x: 0, y: 0}
-  m_Pivot: {x: 1, y: 0.5}
+  m_Pivot: {x: 0, y: 1}
 --- !u!114 &1845121592
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -52687,7 +52686,7 @@ MonoBehaviour:
   _placeCommand: {fileID: 187161793506945269, guid: c348712bda248c246b8c49b3db54643f, type: 3}
   _rightController: {fileID: 1076869685}
   _roomType: 1
-  _enabled: 1
+  _enabled: 0
 --- !u!4 &1996439084
 Transform:
   m_ObjectHideFlags: 0
@@ -53266,11 +53265,11 @@ RectTransform:
   m_Children: []
   m_Father: {fileID: 1669789701}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0.5, y: 0.5}
-  m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 2, y: 0}
+  m_AnchorMin: {x: 0, y: 1}
+  m_AnchorMax: {x: 0, y: 1}
+  m_AnchoredPosition: {x: 2, y: -0}
   m_SizeDelta: {x: 0, y: 0}
-  m_Pivot: {x: 0.5, y: 0.5}
+  m_Pivot: {x: 0, y: 1}
 --- !u!114 &2012375893
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -53298,7 +53297,7 @@ MonoBehaviour:
     m_BestFit: 0
     m_MinSize: 10
     m_MaxSize: 40
-    m_Alignment: 4
+    m_Alignment: 0
     m_AlignByGeometry: 0
     m_RichText: 1
     m_HorizontalOverflow: 1

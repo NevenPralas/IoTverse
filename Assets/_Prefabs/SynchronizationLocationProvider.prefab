@@ -93,15 +93,15 @@ PrefabInstance:
     m_Modifications:
     - target: {fileID: 32582360920274023, guid: abaff28daa9b2444795ed2ff4255f4f1, type: 3}
       propertyPath: m_LocalPosition.x
-      value: 2.438054
+      value: -2.061946
       objectReference: {fileID: 0}
     - target: {fileID: 32582360920274023, guid: abaff28daa9b2444795ed2ff4255f4f1, type: 3}
       propertyPath: m_LocalPosition.y
-      value: 0.27933148
+      value: -0.72066855
       objectReference: {fileID: 0}
     - target: {fileID: 32582360920274023, guid: abaff28daa9b2444795ed2ff4255f4f1, type: 3}
       propertyPath: m_LocalPosition.z
-      value: 1.217397
+      value: 1.269397
       objectReference: {fileID: 0}
     - target: {fileID: 32582360920274023, guid: abaff28daa9b2444795ed2ff4255f4f1, type: 3}
       propertyPath: m_LocalRotation.w
@@ -131,6 +131,10 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 2624989863739746021, guid: abaff28daa9b2444795ed2ff4255f4f1, type: 3}
+      propertyPath: m_NavMeshData
+      value: 
+      objectReference: {fileID: 23800000, guid: bec346af164b70c499a8fa100ae1269a, type: 2}
     - target: {fileID: 4885478695837747677, guid: abaff28daa9b2444795ed2ff4255f4f1, type: 3}
       propertyPath: m_Name
       value: PraviFloor
