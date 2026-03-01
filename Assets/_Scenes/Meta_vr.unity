@@ -5558,7 +5558,7 @@ GameObject:
   - component: {fileID: 191188426}
   - component: {fileID: 191188425}
   m_Layer: 0
-  m_Name: Text (TMP) L2
+  m_Name: L2
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -8053,7 +8053,6 @@ MonoBehaviour:
   _player: {fileID: 883658910}
   _playerAnchor: {fileID: 198405049}
   _synchronizerExpectedLocation: {fileID: 1514436098}
-  _tutorial: {fileID: 1156266179}
 --- !u!4 &293514282
 Transform:
   m_ObjectHideFlags: 0
@@ -25789,7 +25788,7 @@ GameObject:
   - component: {fileID: 912948283}
   - component: {fileID: 912948282}
   m_Layer: 0
-  m_Name: Text (TMP) R2
+  m_Name: R2
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -33196,7 +33195,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4885478695837747677, guid: abaff28daa9b2444795ed2ff4255f4f1, type: 3}
       propertyPath: m_Name
-      value: PraviFloor
+      value: PraviFloor2
       objectReference: {fileID: 0}
     - target: {fileID: 4885478695837747677, guid: abaff28daa9b2444795ed2ff4255f4f1, type: 3}
       propertyPath: m_IsActive
@@ -34703,7 +34702,7 @@ GameObject:
   - component: {fileID: 1208179122}
   - component: {fileID: 1208179121}
   m_Layer: 0
-  m_Name: Text (TMP) R1
+  m_Name: R1
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -51135,7 +51134,7 @@ GameObject:
   - component: {fileID: 1772695072}
   - component: {fileID: 1772695071}
   m_Layer: 0
-  m_Name: Text (TMP) C
+  m_Name: C
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -56191,7 +56190,7 @@ GameObject:
   - component: {fileID: 1911673992}
   - component: {fileID: 1911673991}
   m_Layer: 0
-  m_Name: Text (TMP) L1
+  m_Name: L1
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0

@@ -178,9 +178,84 @@ public class HeatMapStaticWithJson : MonoBehaviour
         Debug.Log($"{tag} {msg}");
     }
 
+    // =========================================================
+    // AUTO-WIRING (NOVO)
+    // - ako u Inspectoru nisu povučeni TMP labeli:
+    //   uzmi objekte po imenima: C, L1, L2, R1, R2
+    // - ako lineChart nije povučen:
+    //   uzmi objekt po imenu: LineChart_Time
+    // - radi i za inactive objekte (Resources.FindObjectsOfTypeAll)
+    // - poziva se u Awake + OnEnable + Start (za svaki slučaj)
+    // =========================================================
+    private void AutoWireSceneReferences()
+    {
+        // TMP labels
+        if (labelC == null) labelC = FindSceneTMPTextByName("C");
+        if (labelL1 == null) labelL1 = FindSceneTMPTextByName("L1");
+        if (labelL2 == null) labelL2 = FindSceneTMPTextByName("L2");
+        if (labelR1 == null) labelR1 = FindSceneTMPTextByName("R1");
+        if (labelR2 == null) labelR2 = FindSceneTMPTextByName("R2");
+
+        // Line chart GO
+        if (lineChart == null)
+        {
+            lineChart = FindSceneGameObjectByName("LineChart_Time");
+        }
+    }
+
+    private static TMP_Text FindSceneTMPTextByName(string objectName)
+    {
+        if (string.IsNullOrEmpty(objectName)) return null;
+
+        // Find both active & inactive in loaded scenes
+        var all = Resources.FindObjectsOfTypeAll<TMP_Text>();
+        for (int i = 0; i < all.Length; i++)
+        {
+            var t = all[i];
+            if (t == null) continue;
+
+            // filter out prefabs/assets
+            if (!t.gameObject.scene.IsValid() || !t.gameObject.scene.isLoaded) continue;
+            if (t.hideFlags != HideFlags.None) continue;
+
+            if (t.name == objectName)
+                return t;
+        }
+        return null;
+    }
+
+    private static GameObject FindSceneGameObjectByName(string objectName)
+    {
+        if (string.IsNullOrEmpty(objectName)) return null;
+
+        // GameObject.Find ne nalazi inactive, pa idemo preko Transform-a
+        var all = Resources.FindObjectsOfTypeAll<Transform>();
+        for (int i = 0; i < all.Length; i++)
+        {
+            var tr = all[i];
+            if (tr == null) continue;
+
+            if (!tr.gameObject.scene.IsValid() || !tr.gameObject.scene.isLoaded) continue;
+            if (tr.hideFlags != HideFlags.None) continue;
+
+            if (tr.name == objectName)
+                return tr.gameObject;
+        }
+        return null;
+    }
+
     private void Awake()
     {
+        AutoWireSceneReferences();
+
         Log("[HEATMAP]", $"Awake() scene='{UnityEngine.SceneManagement.SceneManager.GetActiveScene().name}' obj='{name}' active={gameObject.activeInHierarchy}");
+        EnsureInitialized();
+    }
+
+    private void OnEnable()
+    {
+        // bitno za slučaj kad se objekt sa skriptom ubaci naknadno ili enable-a kasnije
+        AutoWireSceneReferences();
         EnsureInitialized();
     }
 
@@ -224,6 +299,7 @@ public class HeatMapStaticWithJson : MonoBehaviour
 
     void Start()
     {
+        AutoWireSceneReferences();
         EnsureInitialized();
 
         Log("[HEATMAP]", "Start() begin");
@@ -232,7 +308,7 @@ public class HeatMapStaticWithJson : MonoBehaviour
         // chart reference diagnostics
         if (lineChart == null)
         {
-            Log("[LINECHART]", "ERROR: lineChart reference is NULL in inspector!");
+            Log("[LINECHART]", "ERROR: lineChart reference is NULL in inspector (and auto-wire couldn't find 'LineChart_Time')!");
         }
         else
         {

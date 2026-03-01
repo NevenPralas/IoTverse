@@ -7277,7 +7277,7 @@ GameObject:
   - component: {fileID: 299672186}
   - component: {fileID: 299672185}
   m_Layer: 0
-  m_Name: Text (TMP) C
+  m_Name: C
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -26014,7 +26014,7 @@ GameObject:
   - component: {fileID: 1045105255}
   - component: {fileID: 1045105254}
   m_Layer: 0
-  m_Name: Text (TMP) L2
+  m_Name: L2
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -36913,7 +36913,7 @@ GameObject:
   - component: {fileID: 1368527632}
   - component: {fileID: 1368527631}
   m_Layer: 0
-  m_Name: Text (TMP) R2
+  m_Name: R2
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -43126,11 +43126,11 @@ RectTransform:
   - {fileID: 2044033052}
   m_Father: {fileID: 1557298593}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 1}
-  m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 290, y: -150}
+  m_AnchorMin: {x: 0.5, y: 0.5}
+  m_AnchorMax: {x: 0.5, y: 0.5}
+  m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 0, y: 0}
-  m_Pivot: {x: 0, y: 1}
+  m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1669789702
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -44678,11 +44678,11 @@ RectTransform:
   m_Children: []
   m_Father: {fileID: 1845121591}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 1}
-  m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 2, y: -0}
+  m_AnchorMin: {x: 1, y: 0.5}
+  m_AnchorMax: {x: 1, y: 0.5}
+  m_AnchoredPosition: {x: -2, y: 0}
   m_SizeDelta: {x: 0, y: 0}
-  m_Pivot: {x: 0, y: 1}
+  m_Pivot: {x: 1, y: 0.5}
 --- !u!114 &1720602054
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -44710,7 +44710,7 @@ MonoBehaviour:
     m_BestFit: 0
     m_MinSize: 10
     m_MaxSize: 40
-    m_Alignment: 0
+    m_Alignment: 5
     m_AlignByGeometry: 0
     m_RichText: 1
     m_HorizontalOverflow: 1
@@ -48498,11 +48498,11 @@ RectTransform:
   - {fileID: 314809688}
   m_Father: {fileID: 1557298593}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 1}
-  m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 290, y: -150}
+  m_AnchorMin: {x: 1, y: 0.5}
+  m_AnchorMax: {x: 1, y: 0.5}
+  m_AnchoredPosition: {x: -290, y: 0}
   m_SizeDelta: {x: 0, y: 0}
-  m_Pivot: {x: 0, y: 1}
+  m_Pivot: {x: 1, y: 0.5}
 --- !u!114 &1845121592
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -50335,7 +50335,7 @@ GameObject:
   - component: {fileID: 1908100979}
   - component: {fileID: 1908100978}
   m_Layer: 0
-  m_Name: Text (TMP) L1
+  m_Name: L1
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -53013,7 +53013,7 @@ GameObject:
   - component: {fileID: 2007142096}
   - component: {fileID: 2007142095}
   m_Layer: 0
-  m_Name: Text (TMP) R1
+  m_Name: R1
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -53265,11 +53265,11 @@ RectTransform:
   m_Children: []
   m_Father: {fileID: 1669789701}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
-  m_AnchorMin: {x: 0, y: 1}
-  m_AnchorMax: {x: 0, y: 1}
-  m_AnchoredPosition: {x: 2, y: -0}
+  m_AnchorMin: {x: 0.5, y: 0.5}
+  m_AnchorMax: {x: 0.5, y: 0.5}
+  m_AnchoredPosition: {x: 2, y: 0}
   m_SizeDelta: {x: 0, y: 0}
-  m_Pivot: {x: 0, y: 1}
+  m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &2012375893
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -53297,7 +53297,7 @@ MonoBehaviour:
     m_BestFit: 0
     m_MinSize: 10
     m_MaxSize: 40
-    m_Alignment: 0
+    m_Alignment: 4
     m_AlignByGeometry: 0
     m_RichText: 1
     m_HorizontalOverflow: 1
