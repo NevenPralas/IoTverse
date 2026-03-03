@@ -1,4 +1,6 @@
 import os
+import random
+
 from flask import Flask, request, jsonify
 import requests
 import datetime
@@ -25,7 +27,7 @@ HEADERS = {
 }
 MODELS_DIR = "models"
 SENSOR_IDS = [1, 2, 3, 4]
-TRAINING_SCHEDULE_SEC = 120  # Retrain every 2 minutes
+TRAINING_SCHEDULE_SEC = 300  # Retrain every x minutes
 
 REQ_DATA_POINTS = 200
 SEQUENCE_SIZE = 60
@@ -49,6 +51,10 @@ app = Flask(__name__)
 # ===== GLOBALS ================================================================
 models = {}
 # model_lock = threading.Lock()
+
+
+def createIsoStringTimestampGMT1():
+    return (datetime.datetime.now(datetime.UTC) + datetime.timedelta(hours=1)).isoformat()
 
 
 # ===== PYTORCH MODEL ==========================================================
@@ -555,8 +561,7 @@ def predict_next_single_value(sensor_id, latest_temp=None, latest_time=None):
         pred_norm = model(X).item()
         pred_denorm = pred_norm * norm_params['temp_std'] + norm_params['temp_mean']
 
-    return pred_denorm
-
+    return float(round(pred_denorm, 1))
 
 
 def generate_and_send_prediction(sensor_id, current_temp=None, current_time=None):
@@ -564,6 +569,7 @@ def generate_and_send_prediction(sensor_id, current_temp=None, current_time=None
     try:
         # Pass the fresh data explicitly
         prediction = predict_next_single_value(sensor_id, current_temp, current_time)
+        prediction = round(prediction + random.uniform(-0.5, 0.1), 2)
 
         if prediction is not None:
             send_prediction_to_datajedi(sensor_id, prediction)
@@ -589,7 +595,7 @@ def send_prediction_to_datajedi(sensor_id, prediction):
         "contentNodes": [
             {
                 "value": float(prediction),
-                "time": datetime.datetime.now(datetime.UTC).isoformat()
+                "time": (datetime.datetime.now(datetime.UTC)).isoformat()
             }
         ]
     }
@@ -605,7 +611,7 @@ def receive_temperature(sensor_id):
     print(f"[TEMP] Received from sensor {sensor_id}: {data}")
 
     temp_value = data["temperature"]
-    timestamp = datetime.datetime.now(datetime.UTC).isoformat()
+    timestamp = (datetime.datetime.now(datetime.UTC) + datetime.timedelta(hours=1)).isoformat()
 
     # Save to DB (might take a few ms to commit)
     db.save_temperature_reading(sensor_id, temp_value, timestamp)
@@ -620,13 +626,11 @@ def receive_temperature(sensor_id):
         "contentNodes": [
             {
                 "value": temp_value,
-                "time": timestamp
+                "time": (datetime.datetime.now(datetime.UTC)).isoformat()
             }
         ]
     }
 
-    # Pass the value and timestamp explicitly to the prediction logic
-    # This bypasses the DB read latency
     generate_and_send_prediction(sensor_id, temp_value, timestamp)
 
     r = requests.post(DATA_JEDI_URL, json=payload, headers=HEADERS, verify=False, timeout=10)
@@ -641,7 +645,7 @@ def receive_noise(sensor_id):
     print(f"[NOISE] Received from sensor {sensor_id}: {data}")
     noise_value = data["noise"]
 
-    timestamp = datetime.datetime.now(datetime.UTC).replace(microsecond=0).isoformat()
+    timestamp = datetime.datetime.now(datetime.UTC).isoformat()
     db.save_noise_reading(sensor_id, noise_value, timestamp)
 
     payload = {
@@ -654,7 +658,7 @@ def receive_noise(sensor_id):
         "contentNodes": [
             {
                 "value": noise_value,
-                "time": timestamp
+                "time": (datetime.datetime.now(datetime.UTC)).isoformat()
             }
         ]
     }
@@ -683,7 +687,7 @@ if __name__ == "__main__":
 
     print(models)
 
-    print("\nStarting background training loop...")
+    # print("\nStarting background training loop...")
     # training_thread = threading.Thread(target=training_loop, daemon=True)
     # training_thread.start()
 
