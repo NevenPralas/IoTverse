@@ -57,40 +57,22 @@ public class HeatMapStaticWithJson : MonoBehaviour
     private float planeDepth;
 
     // =========================================================
-    // Data Jedi TRUSTED (GET) - CURRENT
+    // MOCKI.IO (1 endpoint)
     // =========================================================
-    [Header("Data Jedi TRUSTED (GET) - CURRENT")]
-    [SerializeField] private string baseUrl = "https://djx.entlab.hr";
-    [SerializeField] private string trustedPath = "/m2m/trusted/data";
-    [SerializeField] private string usr = "FER_Departments";
-    [SerializeField] private int latestNCount = 30;
-    [SerializeField] private string resParamName = "res";
-
-    [SerializeField] private string res1 = "dipProj25_temperature1";
-    [SerializeField] private string res2 = "dipProj25_temperature2";
-    [SerializeField] private string res3 = "dipProj25_temperature3";
-    [SerializeField] private string res4 = "dipProj25_temperature4";
-
-    [Tooltip("Key unutar timestamp objekta, kod vas 'temperature'")]
-    [SerializeField] private string valueKey = "temperature";
-
-    [Header("Data Jedi TRUSTED (GET) - FORECAST")]
-    [SerializeField] private int latestNCountForecast = 30;
-    [SerializeField] private string resPred1 = "dipProj25_predict_temp1";
-    [SerializeField] private string resPred2 = "dipProj25_predict_temp2";
-    [SerializeField] private string resPred3 = "dipProj25_predict_temp3";
-    [SerializeField] private string resPred4 = "dipProj25_predict_temp4";
-
-    [Header("Trusted headers")]
-    [SerializeField] private string authorization = "PREAUTHENTICATED";
-    [SerializeField] private string requesterId = "digiphy1";
-    [SerializeField] private string requesterType = "domainApplication";
-    [SerializeField] private string accept = "application/vnd.ericsson.simple.output+json;version=1.0";
-
-    [Header("Polling")]
+    [Header("Mocki.io (1 endpoint)")]
+    [SerializeField] private string mockUrl = "https://mocki.io/v1/PASTE-YOUR-ID-HERE";
     [SerializeField] private float pollSeconds = 5.0f;
     [SerializeField] private int requestTimeoutSeconds = 15;
     [SerializeField] private bool acceptAnyCertificate = true;
+
+    [Header("Mock parsing keys")]
+    [SerializeField] private string keyCurrent = "current";
+    [SerializeField] private string keyForecast = "forecast";
+    [SerializeField] private string keyTimestamp = "timestamp";
+    [SerializeField] private string keyT1 = "temperature1";
+    [SerializeField] private string keyT2 = "temperature2";
+    [SerializeField] private string keyT3 = "temperature3";
+    [SerializeField] private string keyT4 = "temperature4";
 
     [Header("Debug")]
     [SerializeField] private bool debugLogs = true;
@@ -179,42 +161,29 @@ public class HeatMapStaticWithJson : MonoBehaviour
     }
 
     // =========================================================
-    // AUTO-WIRING (NOVO)
-    // - ako u Inspectoru nisu povučeni TMP labeli:
-    //   uzmi objekte po imenima: C, L1, L2, R1, R2
-    // - ako lineChart nije povučen:
-    //   uzmi objekt po imenu: LineChart_Time
-    // - radi i za inactive objekte (Resources.FindObjectsOfTypeAll)
-    // - poziva se u Awake + OnEnable + Start (za svaki slučaj)
+    // AUTO-WIRING
     // =========================================================
     private void AutoWireSceneReferences()
     {
-        // TMP labels
         if (labelC == null) labelC = FindSceneTMPTextByName("C");
         if (labelL1 == null) labelL1 = FindSceneTMPTextByName("L1");
         if (labelL2 == null) labelL2 = FindSceneTMPTextByName("L2");
         if (labelR1 == null) labelR1 = FindSceneTMPTextByName("R1");
         if (labelR2 == null) labelR2 = FindSceneTMPTextByName("R2");
 
-        // Line chart GO
         if (lineChart == null)
-        {
             lineChart = FindSceneGameObjectByName("LineChart_Time");
-        }
     }
 
     private static TMP_Text FindSceneTMPTextByName(string objectName)
     {
         if (string.IsNullOrEmpty(objectName)) return null;
 
-        // Find both active & inactive in loaded scenes
         var all = Resources.FindObjectsOfTypeAll<TMP_Text>();
         for (int i = 0; i < all.Length; i++)
         {
             var t = all[i];
             if (t == null) continue;
-
-            // filter out prefabs/assets
             if (!t.gameObject.scene.IsValid() || !t.gameObject.scene.isLoaded) continue;
             if (t.hideFlags != HideFlags.None) continue;
 
@@ -228,7 +197,6 @@ public class HeatMapStaticWithJson : MonoBehaviour
     {
         if (string.IsNullOrEmpty(objectName)) return null;
 
-        // GameObject.Find ne nalazi inactive, pa idemo preko Transform-a
         var all = Resources.FindObjectsOfTypeAll<Transform>();
         for (int i = 0; i < all.Length; i++)
         {
@@ -247,14 +215,12 @@ public class HeatMapStaticWithJson : MonoBehaviour
     private void Awake()
     {
         AutoWireSceneReferences();
-
         Log("[HEATMAP]", $"Awake() scene='{UnityEngine.SceneManagement.SceneManager.GetActiveScene().name}' obj='{name}' active={gameObject.activeInHierarchy}");
         EnsureInitialized();
     }
 
     private void OnEnable()
     {
-        // bitno za slučaj kad se objekt sa skriptom ubaci naknadno ili enable-a kasnije
         AutoWireSceneReferences();
         EnsureInitialized();
     }
@@ -305,10 +271,9 @@ public class HeatMapStaticWithJson : MonoBehaviour
         Log("[HEATMAP]", "Start() begin");
         SetForecastTmpLabelsEnabled(false);
 
-        // chart reference diagnostics
         if (lineChart == null)
         {
-            Log("[LINECHART]", "ERROR: lineChart reference is NULL in inspector (and auto-wire couldn't find 'LineChart_Time')!");
+            Log("[LINECHART]", "ERROR: lineChart reference is NULL (and auto-wire couldn't find 'LineChart_Time')!");
         }
         else
         {
@@ -347,12 +312,11 @@ public class HeatMapStaticWithJson : MonoBehaviour
                         $"forecastLen={(forecastData?.measurements != null ? forecastData.measurements.Length : 0)} " +
                         $"angles=[{angle1:0.0},{angle2:0.0},{angle3:0.0},{angle4:0.0}]");
 
-        StartCoroutine(PollDataJediLoop());
+        StartCoroutine(PollMockLoop());
     }
 
     void Update()
     {
-        // 1) roll tick each 1 sec
         _rollTimer += Time.deltaTime;
         if (_rollTimer >= 1f)
         {
@@ -383,7 +347,6 @@ public class HeatMapStaticWithJson : MonoBehaviour
             }
         }
 
-        // 2) heatmap render update only when enabled
         if (heatmapEnabled && autoUpdate && HasValuesChanged())
         {
             Log("[HEATMAP]", $"Heatmap values changed -> GenerateHeatmap() angles=[{angle1:0.0},{angle2:0.0},{angle3:0.0},{angle4:0.0}]");
@@ -391,7 +354,6 @@ public class HeatMapStaticWithJson : MonoBehaviour
             SaveCurrentAngles();
         }
 
-        // 3) extra chart refresh tick
         if (isTrackingPoint && data != null && data.measurements != null && data.measurements.Length > 0)
         {
             chartUpdateTimer += Time.deltaTime;
@@ -438,89 +400,32 @@ public class HeatMapStaticWithJson : MonoBehaviour
     }
 
     // =========================================================
-    // Data Jedi polling
+    // MOCK polling (1 endpoint)
     // =========================================================
-    private IEnumerator PollDataJediLoop()
+    private IEnumerator PollMockLoop()
     {
-        Log("[DATAJEDI]", $"PollDataJediLoop START pollSeconds={pollSeconds} baseUrl={baseUrl}");
+        Log("[MOCK]", $"PollMockLoop START pollSeconds={pollSeconds} url={mockUrl}");
         while (true)
         {
             _pollTick++;
-            Log("[DATAJEDI]", $"--- POLL TICK #{_pollTick:0} ---");
-            yield return FetchAndApplyLatestSamples();
+            Log("[MOCK]", $"--- POLL TICK #{_pollTick:0} ---");
+            yield return FetchAndApplyMockSamples();
             yield return new WaitForSeconds(pollSeconds);
         }
     }
 
-    private IEnumerator FetchAndApplyLatestSamples()
+    private IEnumerator FetchAndApplyMockSamples()
     {
-        // CURRENT
-        yield return FetchOneRes(res1, 1, false);
-        yield return FetchOneRes(res2, 2, false);
-        yield return FetchOneRes(res3, 3, false);
-        yield return FetchOneRes(res4, 4, false);
-
-        // FORECAST
-        yield return FetchOneRes(resPred1, 1, true);
-        yield return FetchOneRes(resPred2, 2, true);
-        yield return FetchOneRes(resPred3, 3, true);
-        yield return FetchOneRes(resPred4, 4, true);
-
-        ApplyCornerTempsFromNow();
-
-        bool anyCurrent =
-            _sensor1Data.Count > 0 ||
-            _sensor2Data.Count > 0 ||
-            _sensor3Data.Count > 0 ||
-            _sensor4Data.Count > 0;
-
-        bool anyPred =
-            _pred1Data.Count > 0 ||
-            _pred2Data.Count > 0 ||
-            _pred3Data.Count > 0 ||
-            _pred4Data.Count > 0;
-
-        if (!anyCurrent)
+        if (string.IsNullOrWhiteSpace(mockUrl))
         {
-            SetStatus("[DATAJEDI] poll: NO CURRENT DATA parsed -> angles remain default");
+            SetStatus("[MOCK] ERROR: mockUrl is empty!");
+            yield break;
         }
-        else
+
+        Log("[MOCK]", $"GET url='{mockUrl}'");
+
+        using (var req = UnityWebRequest.Get(mockUrl))
         {
-            string stale = BuildStaleStatus();
-            string pred = anyPred ? " | forecast:OK" : " | forecast:EMPTY";
-            SetStatus($"[DATAJEDI] poll OK | A1={angle1:0.0} A2={angle2:0.0} A3={angle3:0.0} A4={angle4:0.0}{stale}{pred}");
-        }
-    }
-
-    private string BuildStaleStatus()
-    {
-        DateTime now = DateTime.UtcNow;
-        int s1 = _hasLast1 ? (int)Math.Floor((now - _lastTs1Utc).TotalSeconds) : -1;
-        int s2 = _hasLast2 ? (int)Math.Floor((now - _lastTs2Utc).TotalSeconds) : -1;
-        int s3 = _hasLast3 ? (int)Math.Floor((now - _lastTs3Utc).TotalSeconds) : -1;
-        int s4 = _hasLast4 ? (int)Math.Floor((now - _lastTs4Utc).TotalSeconds) : -1;
-        return $" | age(s): [{s1},{s2},{s3},{s4}]";
-    }
-
-    private IEnumerator FetchOneRes(string resValue, int sensorIndex, bool isForecast)
-    {
-        int count = isForecast ? latestNCountForecast : latestNCount;
-
-        string url =
-            $"{baseUrl}{trustedPath}" +
-            $"?usr={UnityWebRequest.EscapeURL(usr)}" +
-            $"&latestNCount={count}" +
-            $"&{UnityWebRequest.EscapeURL(resParamName)}={UnityWebRequest.EscapeURL(resValue)}";
-
-        Log("[DATAJEDI]", $"GET {(isForecast ? "PRED" : "CURR")} sensor{sensorIndex} url='{url}'");
-
-        using (var req = UnityWebRequest.Get(url))
-        {
-            req.SetRequestHeader("Authorization", authorization);
-            req.SetRequestHeader("X-Requester-Id", requesterId);
-            req.SetRequestHeader("X-Requester-Type", requesterType);
-            req.SetRequestHeader("Accept", accept);
-
             if (acceptAnyCertificate)
                 req.certificateHandler = new AcceptAllCertificates();
 
@@ -536,29 +441,253 @@ public class HeatMapStaticWithJson : MonoBehaviour
 
             if (req.result != UnityWebRequest.Result.Success)
             {
-                Debug.LogWarning($"[DATAJEDI] HTTP FAIL {(isForecast ? "PRED" : "CURR")} sensor{sensorIndex} res={resValue} code={code} err={req.error}");
+                Debug.LogWarning($"[MOCK] HTTP FAIL code={code} err={req.error}");
                 if (!string.IsNullOrEmpty(bodyShort)) Debug.LogWarning(bodyShort);
                 yield break;
             }
 
-            if (!TryParseTrustedJson(body, valueKey, out List<TimestampValue> series))
+            if (!TryParseMockJson(body, out List<MockSample> current, out List<MockSample> forecast))
             {
-                Debug.LogWarning($"[DATAJEDI] PARSE FAIL {(isForecast ? "PRED" : "CURR")} sensor{sensorIndex} res={resValue} code={code} bodyLen={(body != null ? body.Length : 0)}");
+                Debug.LogWarning($"[MOCK] PARSE FAIL code={code} bodyLen={(body != null ? body.Length : 0)}");
                 if (!string.IsNullOrEmpty(bodyShort)) Debug.LogWarning(bodyShort);
                 yield break;
             }
 
-            if (isForecast)
-                series = MaybeRemapForecastSeriesToFuture(series);
+            // remap time to "now" so it behaves like live stream
+            current = RemapSeriesToEndAtNow(current);          // last == now
+            forecast = RemapSeriesToStartAfterNow(forecast);   // first == now+1s
 
-            ApplySeriesToCache(series, sensorIndex, isForecast);
+            ApplyMockSamplesToCaches(current, isForecast: false);
+            ApplyMockSamplesToCaches(forecast, isForecast: true);
 
-            var list = GetSensorList(sensorIndex, isForecast);
-            var last = list.Count > 0 ? list[list.Count - 1] : null;
-            string lastLocal = last != null ? last.timestampUtc.ToLocalTime().ToString("HH:mm:ss.fff") : "N/A";
-            float lastVal = last != null ? last.value : 0f;
+            ApplyCornerTempsFromNow();
 
-            Log("[DATAJEDI]", $"OK {(isForecast ? "PRED" : "CURR")} sensor{sensorIndex} res={resValue} http={code} parsed={series.Count} cache={list.Count} last={lastLocal} val={lastVal:0.0}");
+            bool anyCurrent = _sensor1Data.Count > 0 || _sensor2Data.Count > 0 || _sensor3Data.Count > 0 || _sensor4Data.Count > 0;
+            bool anyPred = _pred1Data.Count > 0 || _pred2Data.Count > 0 || _pred3Data.Count > 0 || _pred4Data.Count > 0;
+
+            if (!anyCurrent)
+            {
+                SetStatus("[MOCK] poll: NO CURRENT DATA parsed -> angles remain default");
+            }
+            else
+            {
+                string stale = BuildStaleStatus();
+                string pred = anyPred ? " | forecast:OK" : " | forecast:EMPTY";
+                SetStatus($"[MOCK] poll OK | A1={angle1:0.0} A2={angle2:0.0} A3={angle3:0.0} A4={angle4:0.0}{stale}{pred}");
+            }
+
+            Log("[MOCK]", $"OK http={code} parsed current={current.Count} forecast={forecast.Count} cache curr=[{_sensor1Data.Count},{_sensor2Data.Count},{_sensor3Data.Count},{_sensor4Data.Count}] pred=[{_pred1Data.Count},{_pred2Data.Count},{_pred3Data.Count},{_pred4Data.Count}]");
+        }
+    }
+
+    private string BuildStaleStatus()
+    {
+        DateTime now = DateTime.UtcNow;
+        int s1 = _hasLast1 ? (int)Math.Floor((now - _lastTs1Utc).TotalSeconds) : -1;
+        int s2 = _hasLast2 ? (int)Math.Floor((now - _lastTs2Utc).TotalSeconds) : -1;
+        int s3 = _hasLast3 ? (int)Math.Floor((now - _lastTs3Utc).TotalSeconds) : -1;
+        int s4 = _hasLast4 ? (int)Math.Floor((now - _lastTs4Utc).TotalSeconds) : -1;
+        return $" | age(s): [{s1},{s2},{s3},{s4}]";
+    }
+
+    // =========================================================
+    // Mock data structures + parsing
+    // =========================================================
+    private class MockSample
+    {
+        public DateTime tsUtc;
+        public float t1, t2, t3, t4;
+    }
+
+    private bool TryParseMockJson(string json, out List<MockSample> current, out List<MockSample> forecast)
+    {
+        current = new List<MockSample>();
+        forecast = new List<MockSample>();
+
+        if (string.IsNullOrWhiteSpace(json)) return false;
+
+        object rootObj = MiniJSON.Json.Deserialize(json);
+        if (!(rootObj is Dictionary<string, object> root)) return false;
+
+        // current
+        if (root.TryGetValue(keyCurrent, out object currObj) && currObj is List<object> currArr)
+        {
+            foreach (var item in currArr)
+            {
+                if (!(item is Dictionary<string, object> d)) continue;
+
+                DateTime ts = ParseIsoToUtc(GetString(d, keyTimestamp));
+                float t1 = GetFloat(d, keyT1);
+                float t2 = GetFloat(d, keyT2);
+                float t3 = GetFloat(d, keyT3);
+                float t4 = GetFloat(d, keyT4);
+
+                if (ts == DateTime.MinValue) continue;
+
+                current.Add(new MockSample { tsUtc = ts, t1 = t1, t2 = t2, t3 = t3, t4 = t4 });
+            }
+        }
+
+        // forecast
+        if (root.TryGetValue(keyForecast, out object predObj) && predObj is List<object> predArr)
+        {
+            foreach (var item in predArr)
+            {
+                if (!(item is Dictionary<string, object> d)) continue;
+
+                DateTime ts = ParseIsoToUtc(GetString(d, keyTimestamp));
+                float t1 = GetFloat(d, keyT1);
+                float t2 = GetFloat(d, keyT2);
+                float t3 = GetFloat(d, keyT3);
+                float t4 = GetFloat(d, keyT4);
+
+                if (ts == DateTime.MinValue) continue;
+
+                forecast.Add(new MockSample { tsUtc = ts, t1 = t1, t2 = t2, t3 = t3, t4 = t4 });
+            }
+        }
+
+        current.Sort((a, b) => a.tsUtc.CompareTo(b.tsUtc));
+        forecast.Sort((a, b) => a.tsUtc.CompareTo(b.tsUtc));
+
+        // dopusti da forecast bude prazan, ali current mora postojati za smisao
+        return current.Count > 0;
+    }
+
+    private List<MockSample> RemapSeriesToEndAtNow(List<MockSample> series)
+    {
+        if (series == null || series.Count == 0) return series;
+
+        // uzmi “step” iz originalnih timestampova ili fallback 1s
+        double stepSec = EstimateMedianStepSeconds(series);
+        if (stepSec < 0.2) stepSec = 1.0;
+
+        DateTime nowUtc = DateTime.UtcNow;
+
+        var remapped = new List<MockSample>(series.Count);
+        for (int i = 0; i < series.Count; i++)
+        {
+            // želimo da zadnji element bude "now"
+            int fromEnd = (series.Count - 1) - i;
+            DateTime ts = nowUtc.AddSeconds(-fromEnd * stepSec);
+
+            var s = series[i];
+            remapped.Add(new MockSample { tsUtc = ts, t1 = s.t1, t2 = s.t2, t3 = s.t3, t4 = s.t4 });
+        }
+
+        remapped.Sort((a, b) => a.tsUtc.CompareTo(b.tsUtc));
+        return remapped;
+    }
+
+    private List<MockSample> RemapSeriesToStartAfterNow(List<MockSample> series)
+    {
+        if (series == null || series.Count == 0) return series;
+
+        double stepSec = EstimateMedianStepSeconds(series);
+        if (stepSec < 0.2) stepSec = 1.0;
+
+        DateTime nowUtc = DateTime.UtcNow;
+
+        var remapped = new List<MockSample>(series.Count);
+        for (int i = 0; i < series.Count; i++)
+        {
+            // prvi element = now + 1*step
+            DateTime ts = nowUtc.AddSeconds((i + 1) * stepSec);
+
+            var s = series[i];
+            remapped.Add(new MockSample { tsUtc = ts, t1 = s.t1, t2 = s.t2, t3 = s.t3, t4 = s.t4 });
+        }
+
+        remapped.Sort((a, b) => a.tsUtc.CompareTo(b.tsUtc));
+        return remapped;
+    }
+
+    private double EstimateMedianStepSeconds(List<MockSample> series)
+    {
+        if (series == null || series.Count < 2) return 1;
+
+        var diffs = new List<double>();
+        for (int i = 1; i < series.Count; i++)
+        {
+            double d = (series[i].tsUtc - series[i - 1].tsUtc).TotalSeconds;
+            if (d > 0.05 && d < 600) diffs.Add(d);
+        }
+
+        if (diffs.Count == 0) return 1;
+
+        diffs.Sort();
+        int mid = diffs.Count / 2;
+        return diffs.Count % 2 == 1 ? diffs[mid] : (diffs[mid - 1] + diffs[mid]) / 2.0;
+    }
+
+    private void ApplyMockSamplesToCaches(List<MockSample> samples, bool isForecast)
+    {
+        if (samples == null || samples.Count == 0) return;
+
+        // map samples -> per-sensor TimestampValue list
+        for (int i = 0; i < samples.Count; i++)
+        {
+            var s = samples[i];
+            AddToCache(GetSensorList(1, isForecast), new TimestampValue(s.tsUtc, s.t1));
+            AddToCache(GetSensorList(2, isForecast), new TimestampValue(s.tsUtc, s.t2));
+            AddToCache(GetSensorList(3, isForecast), new TimestampValue(s.tsUtc, s.t3));
+            AddToCache(GetSensorList(4, isForecast), new TimestampValue(s.tsUtc, s.t4));
+        }
+
+        // trim + update last values
+        FinalizeCache(1, isForecast);
+        FinalizeCache(2, isForecast);
+        FinalizeCache(3, isForecast);
+        FinalizeCache(4, isForecast);
+    }
+
+    private void AddToCache(List<TimestampValue> targetList, TimestampValue tv)
+    {
+        if (targetList == null) return;
+
+        // prevent duplicates near same timestamp
+        bool exists = false;
+        for (int i = targetList.Count - 1; i >= 0; i--)
+        {
+            if ((tv.timestampUtc - targetList[i].timestampUtc).TotalSeconds > 10)
+                break;
+
+            if (Math.Abs((targetList[i].timestampUtc - tv.timestampUtc).TotalSeconds) < 0.5)
+            {
+                exists = true;
+                break;
+            }
+        }
+        if (!exists) targetList.Add(tv);
+    }
+
+    private void FinalizeCache(int sensorIndex, bool isForecast)
+    {
+        var list = GetSensorList(sensorIndex, isForecast);
+        if (list == null) return;
+
+        list.Sort((a, b) => a.timestampUtc.CompareTo(b.timestampUtc));
+
+        while (list.Count > maxCachedSamplesPerSensor)
+            list.RemoveAt(0);
+
+        if (list.Count == 0) return;
+
+        var last = list[list.Count - 1];
+
+        if (!isForecast)
+        {
+            if (sensorIndex == 1) { _hasLast1 = true; _last1 = last.value; _lastTs1Utc = last.timestampUtc; }
+            if (sensorIndex == 2) { _hasLast2 = true; _last2 = last.value; _lastTs2Utc = last.timestampUtc; }
+            if (sensorIndex == 3) { _hasLast3 = true; _last3 = last.value; _lastTs3Utc = last.timestampUtc; }
+            if (sensorIndex == 4) { _hasLast4 = true; _last4 = last.value; _lastTs4Utc = last.timestampUtc; }
+        }
+        else
+        {
+            if (sensorIndex == 1) { _hasPLast1 = true; _pLast1 = last.value; _pLastTs1Utc = last.timestampUtc; }
+            if (sensorIndex == 2) { _hasPLast2 = true; _pLast2 = last.value; _pLastTs2Utc = last.timestampUtc; }
+            if (sensorIndex == 3) { _hasPLast3 = true; _pLast3 = last.value; _pLastTs3Utc = last.timestampUtc; }
+            if (sensorIndex == 4) { _hasPLast4 = true; _pLast4 = last.value; _pLastTs4Utc = last.timestampUtc; }
         }
     }
 
@@ -578,149 +707,9 @@ public class HeatMapStaticWithJson : MonoBehaviour
                                   _pred4Data;
     }
 
-    private bool TryParseTrustedJson(string json, string key, out List<TimestampValue> series)
-    {
-        series = null;
-        if (string.IsNullOrWhiteSpace(json)) return false;
-
-        object rootObj = MiniJSON.Json.Deserialize(json);
-        if (!(rootObj is List<object> arr) || arr.Count == 0) return false;
-        if (!(arr[0] is Dictionary<string, object> root)) return false;
-
-        Dictionary<string, object> gwNode = null;
-        foreach (var kv in root)
-        {
-            if (kv.Key.Equals("deviceId", StringComparison.OrdinalIgnoreCase)) continue;
-            gwNode = kv.Value as Dictionary<string, object>;
-            if (gwNode != null) break;
-        }
-        if (gwNode == null) return false;
-
-        Dictionary<string, object> sensorNode = null;
-        foreach (var kv in gwNode)
-        {
-            sensorNode = kv.Value as Dictionary<string, object>;
-            if (sensorNode != null) break;
-        }
-        if (sensorNode == null) return false;
-
-        var list = new List<TimestampValue>();
-
-        foreach (var kv in sensorNode)
-        {
-            string iso = kv.Key;
-            if (!(kv.Value is Dictionary<string, object> vdict)) continue;
-
-            float v = GetFloat(vdict, key);
-            DateTime utc = ParseIsoToUtc(iso);
-            if (utc == DateTime.MinValue) continue;
-
-            list.Add(new TimestampValue(utc, v));
-        }
-
-        if (list.Count == 0) return false;
-
-        list.Sort((a, b) => a.timestampUtc.CompareTo(b.timestampUtc));
-        series = list;
-        return true;
-    }
-
-    private List<TimestampValue> MaybeRemapForecastSeriesToFuture(List<TimestampValue> series)
-    {
-        if (series == null || series.Count == 0) return series;
-
-        DateTime nowUtc = DateTime.UtcNow;
-        DateTime maxTs = series[series.Count - 1].timestampUtc;
-
-        if (maxTs <= nowUtc.AddSeconds(1))
-        {
-            double stepSec = EstimateMedianStepSeconds(series);
-            if (stepSec < 1) stepSec = 5;
-
-            var remapped = new List<TimestampValue>(series.Count);
-            for (int i = 0; i < series.Count; i++)
-            {
-                DateTime ts = nowUtc.AddSeconds((i + 1) * stepSec);
-                remapped.Add(new TimestampValue(ts, series[i].value));
-            }
-            remapped.Sort((a, b) => a.timestampUtc.CompareTo(b.timestampUtc));
-
-            Log("[DATAJEDI]", $"Remapped forecast series to future: count={series.Count} stepSec~{stepSec:0.0}");
-            return remapped;
-        }
-
-        return series;
-    }
-
-    private double EstimateMedianStepSeconds(List<TimestampValue> series)
-    {
-        if (series == null || series.Count < 2) return 5;
-
-        var diffs = new List<double>();
-        for (int i = 1; i < series.Count; i++)
-        {
-            double d = (series[i].timestampUtc - series[i - 1].timestampUtc).TotalSeconds;
-            if (d > 0.2 && d < 600) diffs.Add(d);
-        }
-
-        if (diffs.Count == 0) return 5;
-
-        diffs.Sort();
-        int mid = diffs.Count / 2;
-        return diffs.Count % 2 == 1 ? diffs[mid] : (diffs[mid - 1] + diffs[mid]) / 2.0;
-    }
-
-    private void ApplySeriesToCache(List<TimestampValue> series, int sensorIndex, bool isForecast)
-    {
-        if (series == null || series.Count == 0) return;
-
-        var targetList = GetSensorList(sensorIndex, isForecast);
-
-        foreach (var tv in series)
-        {
-            bool exists = false;
-            for (int i = targetList.Count - 1; i >= 0; i--)
-            {
-                if ((tv.timestampUtc - targetList[i].timestampUtc).TotalSeconds > 10)
-                    break;
-
-                if (Math.Abs((targetList[i].timestampUtc - tv.timestampUtc).TotalSeconds) < 0.5)
-                {
-                    exists = true;
-                    break;
-                }
-            }
-            if (!exists) targetList.Add(tv);
-        }
-
-        targetList.Sort((a, b) => a.timestampUtc.CompareTo(b.timestampUtc));
-
-        while (targetList.Count > maxCachedSamplesPerSensor)
-            targetList.RemoveAt(0);
-
-        if (targetList.Count > 0)
-        {
-            var last = targetList[targetList.Count - 1];
-
-            if (!isForecast)
-            {
-                if (sensorIndex == 1) { _hasLast1 = true; _last1 = last.value; _lastTs1Utc = last.timestampUtc; }
-                if (sensorIndex == 2) { _hasLast2 = true; _last2 = last.value; _lastTs2Utc = last.timestampUtc; }
-                if (sensorIndex == 3) { _hasLast3 = true; _last3 = last.value; _lastTs3Utc = last.timestampUtc; }
-                if (sensorIndex == 4) { _hasLast4 = true; _last4 = last.value; _lastTs4Utc = last.timestampUtc; }
-            }
-            else
-            {
-                if (sensorIndex == 1) { _hasPLast1 = true; _pLast1 = last.value; _pLastTs1Utc = last.timestampUtc; }
-                if (sensorIndex == 2) { _hasPLast2 = true; _pLast2 = last.value; _pLastTs2Utc = last.timestampUtc; }
-                if (sensorIndex == 3) { _hasPLast3 = true; _pLast3 = last.value; _pLastTs3Utc = last.timestampUtc; }
-                if (sensorIndex == 4) { _hasPLast4 = true; _pLast4 = last.value; _pLastTs4Utc = last.timestampUtc; }
-            }
-        }
-
-        Log("[DATAJEDI]", $"Cache updated {(isForecast ? "PRED" : "CURR")} sensor{sensorIndex}: cacheCount={targetList.Count}");
-    }
-
+    // =========================================================
+    // Rolling rebuild
+    // =========================================================
     private void RebuildMeasurementDataRolling()
     {
         int n = Mathf.Max(2, windowSeconds);
@@ -847,6 +836,9 @@ public class HeatMapStaticWithJson : MonoBehaviour
         angle4 = m.temperature4;
     }
 
+    // =========================================================
+    // Chart window logic (OSTAJE ISTO)
+    // =========================================================
     private void RefreshChartWindowForNow()
     {
         if (lineChart == null)
@@ -859,10 +851,6 @@ public class HeatMapStaticWithJson : MonoBehaviour
             Log("[LINECHART]", "RefreshChartWindowForNow early-exit: data missing");
             return;
         }
-        if (!isTrackingPoint)
-        {
-            Log("[LINECHART]", "RefreshChartWindowForNow called but isTrackingPoint=false (unexpected).");
-        }
 
         int nowIdx = data.measurements.Length - 1;
         if (nowIdx != cachedNowIndex)
@@ -871,7 +859,6 @@ public class HeatMapStaticWithJson : MonoBehaviour
             ApplyCornerTempsForIndex(nowIdx);
         }
 
-        // UV from point
         Vector3 local = transform.InverseTransformPoint(trackedPoint);
         float u = (local.x / (planeWidth * transform.lossyScale.x)) + 0.5f;
         float v = (local.z / (planeDepth * transform.lossyScale.z)) + 0.5f;
@@ -1415,6 +1402,7 @@ public class HeatMapStaticWithJson : MonoBehaviour
 
     private float GetFloat(Dictionary<string, object> dict, string key)
     {
+        if (dict == null) return 0f;
         if (!dict.TryGetValue(key, out object obj)) return 0f;
         if (obj is long l) return l;
         if (obj is int i) return i;
@@ -1424,11 +1412,21 @@ public class HeatMapStaticWithJson : MonoBehaviour
         return 0f;
     }
 
+    private string GetString(Dictionary<string, object> dict, string key)
+    {
+        if (dict == null) return null;
+        if (!dict.TryGetValue(key, out object obj)) return null;
+        return obj != null ? obj.ToString() : null;
+    }
+
     private DateTime ParseIsoToUtc(string iso)
     {
+        if (string.IsNullOrWhiteSpace(iso)) return DateTime.MinValue;
+
         if (DateTime.TryParse(iso, CultureInfo.InvariantCulture,
                 DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var dt))
             return dt.ToUniversalTime();
+
         return DateTime.MinValue;
     }
 
